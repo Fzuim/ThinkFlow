@@ -1,0 +1,362 @@
+import { create } from "zustand";
+import { useTaskStore, type Task } from "@/stores/taskStore";
+
+const HISTORY_KEY = "task_assistant_history";
+const MAX_HISTORY = 100;
+
+// Abort controller for stopping AI response mid-stream
+let _abortStreamController: AbortController | null = null;
+
+// Check if an error is from streaming abort
+function isAbortError(e: unknown): boolean {
+  if (typeof e === "object" && e !== null) {
+    const obj = e as Record<string, unknown>;
+    if (obj.name === "AbortError") return true;
+    if (typeof obj.message === "string" && (obj.message as string).includes("abort")) return true;
+  }
+  return false;
+}
+
+export interface AssistantAction {
+  type: "create" | "update" | "delete" | "move";
+  task_id?: string;
+  task?: Record<string, unknown>;
+  updates?: Record<string, unknown>;
+  status?: string;
+}
+
+export interface ActionResult {
+  success: boolean;
+  error?: string;
+  taskTitle?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  actions?: AssistantAction[];
+  actionResults?: ActionResult[];
+  suggestedActions?: AssistantAction[];
+  suggestedConfirmed?: boolean | null; // null=pending, true=yes, false=no
+  timestamp: string;
+}
+
+interface ChatStore {
+  messages: ChatMessage[];
+  loading: boolean;
+  error: string | null;
+  isLoaded: boolean;
+  streamingContent: string;
+
+  init: () => Promise<void>;
+  sendMessage: (content: string) => Promise<void>;
+  stopStreaming: () => void;
+  confirmSuggested: (messageId: string, confirmed: boolean) => Promise<void>;
+  clearChat: () => void;
+}
+
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<T>(cmd, args);
+  } catch {
+    return null;
+  }
+}
+
+async function persistMessages(messages: ChatMessage[]): Promise<void> {
+  const sliced = messages.slice(-MAX_HISTORY);
+  await tauriInvoke("set_setting", {
+    key: HISTORY_KEY,
+    value: JSON.stringify(sliced),
+  });
+}
+
+async function executeAction(action: AssistantAction): Promise<ActionResult> {
+  const taskStore = useTaskStore.getState();
+
+  switch (action.type) {
+    case "create": {
+      const t = action.task ?? {};
+      const priority = typeof t.priority === "number" ? t.priority : 5;
+      const task: Task = {
+        id: (t._id as string) ?? crypto.randomUUID(),
+        title: (t.title as string) ?? "Untitled task",
+        description: "",
+        priority,
+        urgency: priority >= 7 ? "urgent" : priority <= 3 ? "low" : "normal",
+        importance: priority >= 7 ? "important" : "normal",
+        status: "todo",
+        deadline: (t.deadline as string) ?? null,
+        estimated_duration: (t.estimated_duration as number) ?? null,
+        energy_level: (t.energy_level as Task["energy_level"]) ?? null,
+        category: (t.category as Task["category"]) ?? null,
+        tags: Array.isArray(t.tags) ? (t.tags as string[]) : [],
+        stakeholder: (t.stakeholder as string) ?? null,
+        dependencies: [],
+        source_text: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null,
+      };
+      await taskStore.addTask(task);
+      return { success: true, taskTitle: task.title };
+    }
+    case "update": {
+      if (!action.task_id) return { success: false, error: "Missing task_id" };
+      const existing = taskStore.getTaskById(action.task_id);
+      if (!existing) return { success: false, error: "Task not found" };
+      await taskStore.updateTask(action.task_id, action.updates as Partial<Task>);
+      return { success: true, taskTitle: existing.title };
+    }
+    case "delete": {
+      if (!action.task_id) return { success: false, error: "Missing task_id" };
+      const toDelete = taskStore.getTaskById(action.task_id);
+      const title = toDelete?.title;
+      await taskStore.deleteTask(action.task_id);
+      return { success: true, taskTitle: title };
+    }
+    case "move": {
+      if (!action.task_id || !action.status) return { success: false, error: "Missing task_id or status" };
+      const toMove = taskStore.getTaskById(action.task_id);
+      if (!toMove) return { success: false, error: "Task not found" };
+      await taskStore.moveTask(action.task_id, action.status as Task["status"]);
+      return { success: true, taskTitle: toMove.title };
+    }
+    default:
+      return { success: false, error: `Unknown action type: ${action.type}` };
+  }
+}
+
+interface TaskAssistantResponse {
+  reply: string;
+  actions: AssistantAction[];
+  suggested_actions: AssistantAction[];
+}
+
+export const useChatStore = create<ChatStore>((set, get) => ({
+  messages: [],
+  loading: false,
+  error: null,
+  isLoaded: false,
+  streamingContent: "",
+
+  init: async () => {
+    const saved = await tauriInvoke<string>("get_setting", { key: HISTORY_KEY });
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as ChatMessage[];
+        set({ messages: parsed, isLoaded: true });
+      } catch {
+        set({ isLoaded: true });
+      }
+    } else {
+      set({ isLoaded: true });
+    }
+  },
+
+  sendMessage: async (content) => {
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+      timestamp: new Date().toISOString(),
+    };
+
+    set((s) => ({ messages: [...s.messages, userMsg], loading: true, error: null, streamingContent: "" }));
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { listen } = await import("@tauri-apps/api/event");
+
+      // Build history (only role + content) for the LLM context
+      const currentMessages = get().messages;
+      const historyPayload = currentMessages
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      // Set up Tauri event listeners for streaming
+      let donePayload: TaskAssistantResponse | null = null;
+      let errorPayload: string | null = null;
+
+      // Listen for content chunks (typewriter effect)
+      const unlistenChunk = await listen<{ chunk: string }>("task-assistant:chunk", (event) => {
+        set((s) => ({ streamingContent: s.streamingContent + event.payload.chunk }));
+      });
+
+      // Listen for completion
+      const unlistenDone = await listen<{ reply: string; actions: AssistantAction[]; suggested_actions: AssistantAction[] }>(
+        "task-assistant:done",
+        (event) => {
+          donePayload = event.payload as unknown as TaskAssistantResponse;
+        },
+      );
+
+      // Listen for errors
+      const unlistenError = await listen<{ error: string }>("task-assistant:error", (event) => {
+        errorPayload = event.payload.error;
+      });
+
+      // Create abort controller for stop functionality
+      _abortStreamController = new AbortController();
+
+      // Start the streaming command
+      try {
+        await invoke("task_assistant_stream", {
+          message: content,
+          history: JSON.stringify(historyPayload),
+        } as any);
+      } catch (e: any) {
+        // Check if streaming was cancelled by user
+        if (isAbortError(e)) {
+          unlistenChunk();
+          unlistenDone();
+          unlistenError();
+          _abortStreamController = null;
+          set({ loading: false, streamingContent: "" });
+          return;
+        }
+        // Rethrow non-abort errors for outer catch to handle
+        throw e;
+      }
+      // Clean up listeners
+      unlistenChunk();
+      unlistenDone();
+      unlistenError();
+
+      if (errorPayload) {
+        if (errorPayload.includes("API key") || errorPayload.includes("api key") || errorPayload.includes("not configured")) {
+          set({ error: "no_llm", loading: false, streamingContent: "" });
+        } else {
+          set({ error: errorPayload, loading: false, streamingContent: "" });
+        }
+        return;
+      }
+
+      if (!donePayload) {
+        set({ error: "No response from AI", loading: false, streamingContent: "" });
+        return;
+      }
+
+      // Execute actions sequentially (await each one)
+      const actionResults: ActionResult[] = [];
+      let lastCreatedId: string | null = null;
+      for (const action of donePayload.actions) {
+        try {
+          let resolvedAction = { ...action };
+          if (action.type === "create") {
+            const newId = crypto.randomUUID();
+            lastCreatedId = newId;
+            resolvedAction = { ...resolvedAction, task: { ...action.task, _id: newId } };
+          } else if (action.type === "move" && action.task_id === "__created__" && lastCreatedId) {
+            resolvedAction = { ...resolvedAction, task_id: lastCreatedId };
+          }
+          const result = await executeAction(resolvedAction);
+          actionResults.push(result);
+        } catch (e: any) {
+          actionResults.push({
+            success: false,
+            error: e instanceof Error ? e.message : "Unknown error",
+          });
+        }
+      }
+
+      // Create the assistant message
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: donePayload.reply,
+        actions: donePayload.actions,
+        actionResults,
+        suggestedActions: donePayload.suggested_actions?.length > 0 ? donePayload.suggested_actions : undefined,
+        suggestedConfirmed: donePayload.suggested_actions?.length > 0 ? null : undefined,
+        timestamp: new Date().toISOString(),
+      };
+
+      set((s) => {
+        const newMessages = [...s.messages, assistantMsg];
+        persistMessages(newMessages).catch(() => {});
+        return { messages: newMessages, loading: false, streamingContent: "" };
+      });
+    } catch (e: any) {
+      // Outer catch (e.g. dynamic import failure)
+      let message: string;
+      if (typeof e === "string") {
+        message = e;
+      } else if (e instanceof Error) {
+        message = e.message;
+      } else {
+        try {
+          message = String(e);
+        } catch {
+          message = "An unexpected error occurred";
+        }
+      }
+
+      if (message.includes("API key") || message.includes("api key") || message.includes("not configured")) {
+        set({ error: "no_llm", loading: false, streamingContent: "" });
+      } else {
+        set({ error: message, loading: false, streamingContent: "" });
+      }
+    }
+  },
+
+  confirmSuggested: async (messageId, confirmed) => {
+    // Update the message's suggestedConfirmed state
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, suggestedConfirmed: confirmed } : m
+      ),
+    }));
+
+    if (!confirmed) return;
+
+    // Find the message and execute its suggested actions
+    const msg = get().messages.find((m) => m.id === messageId);
+    if (!msg?.suggestedActions) return;
+
+    const actionResults: ActionResult[] = [];
+    for (const action of msg.suggestedActions) {
+      try {
+        const result = await executeAction(action);
+        actionResults.push(result);
+      } catch (e: any) {
+        actionResults.push({
+          success: false,
+          error: e instanceof Error ? e.message : "Unknown error",
+        });
+      }
+    }
+
+    // Update message with action results
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              actions: [...(m.actions ?? []), ...(m.suggestedActions ?? [])],
+              actionResults: [...(m.actionResults ?? []), ...actionResults],
+              suggestedActions: undefined,
+            }
+          : m
+      ),
+    }));
+
+    // Persist
+    persistMessages(get().messages).catch(() => {});
+  },
+
+  stopStreaming: () => {
+    if (_abortStreamController) {
+      _abortStreamController.abort();
+      _abortStreamController = null;
+    }
+    set({ loading: false, error: null, streamingContent: "" });
+  },
+
+  clearChat: () => {
+    set({ messages: [], error: null });
+    tauriInvoke("set_setting", { key: HISTORY_KEY, value: "" }).catch(() => {});
+  },
+}));
