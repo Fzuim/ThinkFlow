@@ -27,7 +27,7 @@ const providerOptions = [
   { key: "anthropic", label: "Anthropic (Claude)" },
   { key: "openai", label: "OpenAI (GPT)" },
   { key: "deepseek", label: "DeepSeek" },
-  { key: "compatible", label: "OpenAI Compatible (Ollama/vLLM)" },
+  { key: "compatible", label: "OpenAI Compatible" },
 ];
 
 const languageOptions = [
