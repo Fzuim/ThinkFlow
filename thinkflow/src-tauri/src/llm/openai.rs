@@ -1,0 +1,267 @@
+use async_trait::async_trait;
+use std::time::Instant;
+
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::llm::provider::{
+    ChatCompletionRequest, ChatCompletionResponse, ConnectionTestResult, LlmError, LlmProvider,
+    ModelInfo,
+};
+
+pub struct OpenAiProvider;
+
+impl OpenAiProvider {
+    fn build_chat_url(base_url: &str) -> String {
+        let base = base_url.trim_end_matches('/');
+        if base.ends_with("/v1") {
+            format!("{}/chat/completions", base)
+        } else {
+            format!("{}/v1/chat/completions", base)
+        }
+    }
+
+    fn build_models_url(base_url: &str) -> String {
+        let base = base_url.trim_end_matches('/');
+        if base.ends_with("/v1") {
+            format!("{}/models", base)
+        } else {
+            format!("{}/v1/models", base)
+        }
+    }
+
+    fn build_request_body(request: &ChatCompletionRequest) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "model": request.model,
+            "messages": request.messages.iter().map(|m| {
+                serde_json::json!({
+                    "role": m.role,
+                    "content": m.content,
+                })
+            }).collect::<Vec<_>>(),
+        });
+
+        if let Some(temp) = request.temperature {
+            body["temperature"] = serde_json::json!(temp);
+        }
+        if let Some(max_tok) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(max_tok);
+        }
+        if let Some(top_p) = request.top_p {
+            body["top_p"] = serde_json::json!(top_p);
+        }
+        if let Some(ref rf) = request.response_format {
+            body["response_format"] = rf.clone();
+        }
+
+        body
+    }
+
+    fn parse_chat_response(json: &serde_json::Value) -> String {
+        json["choices"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|choice| choice["message"]["content"].as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+}
+
+#[async_trait]
+impl LlmProvider for OpenAiProvider {
+    async fn chat(
+        &self,
+        api_key: &str,
+        base_url: &str,
+        request: ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse, LlmError> {
+        let client = reqwest::Client::new();
+        let url = Self::build_chat_url(base_url);
+        let body = Self::build_request_body(&request);
+
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(LlmError::from_status(status, &text));
+        }
+
+        let json: serde_json::Value =
+            resp.json().await.map_err(|e| LlmError::Parse(e.to_string()))?;
+
+        let content = Self::parse_chat_response(&json);
+        Ok(ChatCompletionResponse { content })
+    }
+
+    async fn chat_stream(
+        &self,
+        api_key: &str,
+        base_url: &str,
+        request: ChatCompletionRequest,
+        tx: UnboundedSender<String>,
+    ) -> Result<ChatCompletionResponse, LlmError> {
+        let client = reqwest::Client::new();
+        let url = Self::build_chat_url(base_url);
+        let mut body = Self::build_request_body(&request);
+        body["stream"] = serde_json::json!(true);
+
+        let mut resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(LlmError::from_status(status, &text));
+        }
+
+        let mut full_content = String::new();
+        let mut buf = String::new();
+
+        while let Some(chunk) = resp.chunk().await.map_err(|e| LlmError::Network(e.to_string()))? {
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            // Process complete SSE lines from the buffer
+            loop {
+                if let Some(line_end) = buf.find('\n') {
+                    let line = buf[..line_end].trim().to_string();
+                    buf = buf[line_end + 1..].to_string();
+
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+                        if data.trim() == "[DONE]" {
+                            break;
+                        }
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(content) = json["choices"]
+                                .as_array()
+                                .and_then(|arr| arr.first())
+                                .and_then(|choice| choice["delta"]["content"].as_str())
+                            {
+                                full_content.push_str(content);
+                                let _ = tx.send(content.to_string());
+                            }
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(ChatCompletionResponse { content: full_content })
+    }
+
+    async fn list_models(
+        &self,
+        api_key: &str,
+        base_url: &str,
+    ) -> Result<Vec<ModelInfo>, LlmError> {
+        let client = reqwest::Client::new();
+        let url = Self::build_models_url(base_url);
+
+        let resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .send()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(LlmError::from_status(status, &text));
+        }
+
+        let json: serde_json::Value =
+            resp.json().await.map_err(|e| LlmError::Parse(e.to_string()))?;
+
+        let models: Vec<ModelInfo> = json["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        let id = m["id"].as_str()?.to_string();
+                        // Only include chat-capable models (heuristic)
+                        let display_name = if id.starts_with("gpt-")
+                            || id.starts_with("o1")
+                            || id.starts_with("o3")
+                            || id.starts_with("o4")
+                        {
+                            id.clone()
+                        } else {
+                            return None;
+                        };
+                        Some(ModelInfo { id, display_name })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(models)
+    }
+
+    async fn test_connection(
+        &self,
+        api_key: &str,
+        base_url: &str,
+        model: &str,
+    ) -> Result<ConnectionTestResult, LlmError> {
+        let client = reqwest::Client::new();
+        let url = Self::build_chat_url(base_url);
+        let start = Instant::now();
+
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "user", "content": "ping"}
+            ],
+            "max_tokens": 10,
+        });
+
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            let err = LlmError::from_status(status, &text);
+            return Ok(ConnectionTestResult {
+                success: false,
+                message: err.to_string(),
+                latency_ms,
+            });
+        }
+
+        let _json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| LlmError::Parse(e.to_string()))?;
+
+        Ok(ConnectionTestResult {
+            success: true,
+            message: format!("Connected successfully in {}ms", latency_ms),
+            latency_ms,
+        })
+    }
+}

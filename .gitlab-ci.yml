@@ -1,0 +1,28 @@
+stages:
+  - build
+
+build-macos:
+  stage: build
+  tags: [macos]
+  script:
+    - cd thinkflow
+    - npm ci
+    - npm run tauri build
+  artifacts:
+    paths:
+      - thinkflow/src-tauri/target/release/bundle/dmg/*.dmg
+      - thinkflow/src-tauri/target/release/bundle/macos/*.app
+    expire_in: 30 days
+
+build-windows:
+  stage: build
+  tags: [windows]
+  script:
+    - cd thinkflow
+    - npm ci
+    - npm run tauri build
+  artifacts:
+    paths:
+      - thinkflow/src-tauri/target/release/bundle/msi/*.msi
+      - thinkflow/src-tauri/target/release/bundle/nsis/*.exe
+    expire_in: 30 days

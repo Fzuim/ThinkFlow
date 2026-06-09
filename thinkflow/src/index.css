@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans: 'Nunito', 'Noto Sans SC', 'Zen Maru Gothic', -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --color-background: #f8f8f0;
+    --color-foreground: #725d42;
+    --color-card: rgb(247, 243, 223);
+    --color-card-foreground: #725d42;
+    --color-popover: rgb(247, 243, 223);
+    --color-popover-foreground: #725d42;
+    --color-primary: #19c8b9;
+    --color-primary-foreground: #fff;
+    --color-secondary: #f0e8d8;
+    --color-secondary-foreground: #725d42;
+    --color-muted: #f0e8d8;
+    --color-muted-foreground: #9f927d;
+    --color-accent: #B7C6E5;
+    --color-accent-foreground: #fff;
+    --color-destructive: #e05a5a;
+    --color-border: #c4b89e;
+    --color-input: #c4b89e;
+    --color-ring: #19c8b9;
+    --radius-sm: 12px;
+    --radius-md: 18px;
+    --radius-lg: 24px;
+    --radius-xl: 28px;
+    --radius-2xl: 40px;
+    --radius-3xl: 50px;
+    --radius-4xl: 50px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    height: 100%;
+    overflow: hidden;
+    }
+  body {
+    height: 100%;
+    overflow: hidden;
+    }
+  .animal-cursor,
+  .animal-cursor * {
+    cursor: url('/cursors/cursor-sm.png') 2 0, auto !important;
+    }
+}
+
+/* Range slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #e8e0d0;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #19c8b9;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #19c8b9;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #e8e0d0;
+}
