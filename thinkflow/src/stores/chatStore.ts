@@ -220,21 +220,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // Rethrow non-abort errors for outer catch to handle
         throw e;
       }
-      // Clean up listeners
+      // Clean up listeners and capture payloads into local variables
+      // (TypeScript cannot narrow closure-assigned variables, so we
+      //  capture them into locals after the callbacks have completed.)
       unlistenChunk();
       unlistenDone();
       unlistenError();
 
-      if (errorPayload) {
-        if (errorPayload.includes("API key") || errorPayload.includes("api key") || errorPayload.includes("not configured")) {
+      const finalErrorPayload = errorPayload as string | null;
+      const finalDonePayload = donePayload as TaskAssistantResponse | null;
+
+      if (finalErrorPayload) {
+        if (finalErrorPayload.includes("API key") || finalErrorPayload.includes("api key") || finalErrorPayload.includes("not configured")) {
           set({ error: "no_llm", loading: false, streamingContent: "" });
         } else {
-          set({ error: errorPayload, loading: false, streamingContent: "" });
+          set({ error: finalErrorPayload, loading: false, streamingContent: "" });
         }
         return;
       }
 
-      if (!donePayload) {
+      if (!finalDonePayload) {
         set({ error: "No response from AI", loading: false, streamingContent: "" });
         return;
       }
@@ -242,7 +247,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Execute actions sequentially (await each one)
       const actionResults: ActionResult[] = [];
       let lastCreatedId: string | null = null;
-      for (const action of donePayload.actions) {
+      for (const action of finalDonePayload.actions) {
         try {
           let resolvedAction = { ...action };
           if (action.type === "create") {
@@ -266,11 +271,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: donePayload.reply,
-        actions: donePayload.actions,
+        content: finalDonePayload.reply,
+        actions: finalDonePayload.actions,
         actionResults,
-        suggestedActions: donePayload.suggested_actions?.length > 0 ? donePayload.suggested_actions : undefined,
-        suggestedConfirmed: donePayload.suggested_actions?.length > 0 ? null : undefined,
+        suggestedActions: finalDonePayload.suggested_actions?.length > 0 ? finalDonePayload.suggested_actions : undefined,
+        suggestedConfirmed: finalDonePayload.suggested_actions?.length > 0 ? null : undefined,
         timestamp: new Date().toISOString(),
       };
 

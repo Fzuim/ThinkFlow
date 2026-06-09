@@ -26,6 +26,21 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
 
+            let db_path = app_dir.join("thinkflow.db");
+
+            // On first launch of a packaged app, copy the pre-initialized seed
+            // database so the user starts with a clean, schema-ready file. In
+            // dev mode the bundled resource is absent and ensure_schema() runs
+            // normally — the developer's own database is never touched.
+            if !db_path.exists() {
+                if let Ok(seed_path) = app.path().resolve("seed/thinkflow.db", tauri::path::BaseDirectory::Resource) {
+                    if seed_path.exists() {
+                        std::fs::create_dir_all(&app_dir).ok();
+                        let _ = std::fs::copy(&seed_path, &db_path);
+                    }
+                }
+            }
+
             let database = Database::new(app_dir).expect("failed to initialize database");
             app.manage(database);
 
