@@ -17,12 +17,7 @@ import {
 } from "lucide-react";
 
 const providerDedicatedModels: Record<ProviderType, string[]> = {
-  anthropic: [
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
-    "claude-opus-4-7",
-    "claude-sonnet-4-5",
-  ],
+  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6"],
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o4-mini"],
   deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
   compatible: ["local-model"],
