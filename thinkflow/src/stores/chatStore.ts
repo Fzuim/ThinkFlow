@@ -227,8 +227,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       unlistenDone();
       unlistenError();
 
-      const finalErrorPayload: string | null = errorPayload;
-      const finalDonePayload: TaskAssistantResponse | null = donePayload;
+      const finalErrorPayload = errorPayload as string | null;
+      const finalDonePayload = donePayload as TaskAssistantResponse | null;
 
       if (finalErrorPayload) {
         if (finalErrorPayload.includes("API key") || finalErrorPayload.includes("api key") || finalErrorPayload.includes("not configured")) {
