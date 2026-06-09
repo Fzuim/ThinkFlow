@@ -36,12 +36,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Create seed database
-        run: bash scripts/create_seed_db.sh
-
-      - name: Verify seed database exists
-        run: "test -f thinkflow/seed/thinkflow.db || { echo 'ERROR - seed DB not created'; exit 1; }"
-
       - name: Install frontend dependencies
         working-directory: thinkflow
         run: npm ci
@@ -83,12 +77,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Create seed database (Python)
-        run: python scripts/create_seed_db.py
-
-      - name: Verify seed database exists
-        run: "test -f thinkflow/seed/thinkflow.db || { echo 'ERROR - seed DB not created'; exit 1; }"
 
       - name: Install frontend dependencies
         working-directory: thinkflow
