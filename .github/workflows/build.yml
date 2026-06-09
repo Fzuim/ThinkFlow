@@ -39,6 +39,9 @@ jobs:
       - name: Create seed database
         run: bash scripts/create_seed_db.sh
 
+      - name: Verify seed database exists
+        run: test -f thinkflow/seed/thinkflow.db || (echo "ERROR: seed DB not created" && exit 1)
+
       - name: Install frontend dependencies
         working-directory: thinkflow
         run: npm ci
@@ -65,6 +68,9 @@ jobs:
   build-windows:
     name: Windows (x86_64)
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -78,13 +84,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install sqlite3 (for seed DB script)
-        shell: bash
-        run: choco install sqlite -y --no-progress
+      - name: Create seed database (Python)
+        run: python scripts/create_seed_db.py
 
-      - name: Create seed database
-        shell: bash
-        run: bash scripts/create_seed_db.sh
+      - name: Verify seed database exists
+        run: test -f thinkflow/seed/thinkflow.db || (echo "ERROR: seed DB not created" && exit 1)
 
       - name: Install frontend dependencies
         working-directory: thinkflow
