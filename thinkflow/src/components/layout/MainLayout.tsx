@@ -1,11 +1,11 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Divider, Icon } from "animal-island-ui";
+import { Divider, Icon, type IconName } from "animal-island-ui";
 
 export default function MainLayout() {
   const { t } = useTranslation();
 
-  const navItems = [
+  const navItems: { to: string; iconName: IconName; key: string }[] = [
     { to: "/capture", iconName: "icon-chat", key: "nav.taskAssistant" },
     { to: "/", iconName: "icon-variant", key: "nav.taskBoard" },
     { to: "/focus", iconName: "icon-miles", key: "nav.focusMode" },

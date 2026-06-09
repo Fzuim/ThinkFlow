@@ -4,7 +4,7 @@ import { Card } from "animal-island-ui";
 import { Input } from "animal-island-ui";
 import { Select } from "animal-island-ui";
 import { Button } from "animal-island-ui";
-import { Divider, Icon } from "animal-island-ui";
+import { Icon } from "animal-island-ui";
 import { useSettingsStore, type ProviderType } from "@/stores/settingsStore";
 import {
   Save,
