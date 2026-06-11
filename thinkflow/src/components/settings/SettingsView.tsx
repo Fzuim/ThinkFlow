@@ -108,6 +108,7 @@ export default function SettingsView() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 h-3/4 flex flex-col">
+      <style>{`.language-grid [class*="animal-dropdown"] { left: calc(100% + 8px) !important; top: 50% !important; transform: translateY(-50%) !important; right: auto !important; }`}</style>
       <Card className="flex-1" style={{ display: "flex", flexDirection: "column" }}>
         {/* Header */}
         <div className="p-6 pb-2">
@@ -124,26 +125,29 @@ export default function SettingsView() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto px-5 pt-3 space-y-5">
+        <div className="flex-1 overflow-visible px-5 pt-3 space-y-5">
           {/* Language */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 80 }}>
-              <Globe size={14} />
-              {t("settings.language")}
-            </label>
-            <div className="flex-1">
-              <Select
-                value={i18n.language}
-                onChange={(v) => v && changeLanguage(v)}
-                options={languageOptions}
-                placeholder="Language"
-              />
+          <div className="grid grid-cols-2 gap-x-4 language-grid">
+            <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1.5 text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 50 }}>
+                <Globe size={14} />
+                {t("settings.language")}
+              </label>
+              <div className="flex-1">
+                <Select
+                  value={i18n.language}
+                  onChange={(v) => v && changeLanguage(v)}
+                  options={languageOptions}
+                  placeholder="Language"
+                />
+              </div>
             </div>
+            <div />
           </div>
 
           {/* Row: Provider + Base URL */}
-          <div className="grid grid-cols-2 gap-x-4">
-            <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 gap-x-4 language-grid">
+            <div className="flex items-center gap-1">
               <label className="text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 65 }}>
                 {t("settings.llmProvider")}
               </label>
@@ -156,7 +160,7 @@ export default function SettingsView() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <label className="text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 65 }}>
                 {t("settings.baseUrl")}
               </label>
@@ -176,8 +180,8 @@ export default function SettingsView() {
           </div>
 
           {/* Row: API Key + Model */}
-          <div className="grid grid-cols-2 gap-x-4">
-            <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 gap-x-4 language-grid">
+            <div className="flex items-center gap-1">
               <label className="text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 65 }}>
                 {t("settings.apiKey")}
                 {llmConfig.provider === "compatible" && (
@@ -224,8 +228,8 @@ export default function SettingsView() {
           </div>
 
           {/* Row 5: Temperature + Max Tokens */}
-          <div className="grid grid-cols-2 gap-x-4">
-            <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 gap-x-4 language-grid">
+            <div className="flex items-center gap-1">
               <label className="text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 80 }}>
                 {t("settings.temperature", { value: temperature.toFixed(1) })}
               </label>
@@ -247,7 +251,7 @@ export default function SettingsView() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <label className="text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 80 }}>
                 {t("settings.maxTokens")}
               </label>
