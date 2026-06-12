@@ -62,6 +62,10 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
         completed_at: row.get(17)?,
+        progress_log: {
+            let raw: String = row.get(18)?;
+            serde_json::from_str(&raw).unwrap_or_default()
+        },
     })
 }
 
@@ -82,6 +86,7 @@ impl Database {
     /// Uses `CREATE TABLE IF NOT EXISTS` so it is safe to call repeatedly.
     pub fn ensure_schema(&self) -> Result<(), DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        conn.execute_batch("ALTER TABLE tasks ADD COLUMN progress_log TEXT DEFAULT '[]';").ok();
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS tasks (
@@ -102,7 +107,8 @@ impl Database {
                 source_text TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                completed_at TEXT
+                completed_at TEXT,
+                progress_log TEXT DEFAULT '[]'
             );
 
             CREATE TABLE IF NOT EXISTS projects (
@@ -194,7 +200,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at \
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
              FROM tasks WHERE id = ?1",
         )?;
         let task = stmt
@@ -212,7 +218,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at \
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
              FROM tasks ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_task)?;
@@ -229,7 +235,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at \
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
              FROM tasks WHERE status = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![status], row_to_task)?;
@@ -246,7 +252,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at \
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
              FROM tasks WHERE category = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![category], row_to_task)?;
@@ -265,7 +271,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at \
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
              FROM tasks \
              WHERE title LIKE ?1 OR description LIKE ?1 \
              ORDER BY created_at DESC",
