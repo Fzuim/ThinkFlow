@@ -261,12 +261,12 @@ export default function SettingsView() {
                   min={1}
                   max={384000}
                   step={1}
-                  value={maxTokens.toString()}
+                  value={Number.isNaN(maxTokens) ? "" : maxTokens}
                   onChange={(e) =>
                     setLLMConfig({
                       extra_params: {
                         ...llmConfig.extra_params,
-                        max_tokens: parseInt(e.target.value, 10) || 4096,
+                        max_tokens: parseInt(e.target.value, 10),
                       },
                     })
                   }

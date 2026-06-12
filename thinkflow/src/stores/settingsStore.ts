@@ -157,8 +157,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   saveConfig: async (validate = false) => {
     set({ isSaving: true, saveError: null });
     try {
-      await tauriInvoke("save_llm_config", {
-        config: get().llmConfig,
+      let llm = get().llmConfig; const maxTok = llm.extra_params?.max_tokens; if (typeof maxTok !== "number" || Number.isNaN(maxTok) || maxTok <= 0) { llm = { ...llm, extra_params: { ...llm.extra_params, max_tokens: 4096 } }; } await tauriInvoke("save_llm_config", {
+        config: llm,
         validate,
       });
       showThenDismiss(set, {
@@ -182,8 +182,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ isTesting: true, connectionStatus: null });
     try {
       // Save first so the backend has the latest config
-      await tauriInvoke("save_llm_config", {
-        config: get().llmConfig,
+      let llm = get().llmConfig; const maxTok = llm.extra_params?.max_tokens; if (typeof maxTok !== "number" || Number.isNaN(maxTok) || maxTok <= 0) { llm = { ...llm, extra_params: { ...llm.extra_params, max_tokens: 4096 } }; } await tauriInvoke("save_llm_config", {
+        config: llm,
         validate: false,
       });
       const result = await tauriInvoke<ConnectionTestResult>("test_connection");
