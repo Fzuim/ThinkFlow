@@ -22,6 +22,7 @@ export interface Task {
   stakeholder: string | null;
   dependencies: string[];
   source_text: string | null;
+  progress_log: { content: string; recorded_at: string }[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -52,6 +53,7 @@ interface TaskStore {
   addTask: (task: Task) => Promise<void>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  appendTaskProgress: (taskId: string, content: string) => Promise<void>;
   moveTask: (id: string, status: TaskStatus) => Promise<void>;
   reorderTasks: (status: TaskStatus, orderedIds: string[]) => void;
   getTasksByStatus: (status: TaskStatus) => Task[];
@@ -147,6 +149,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       selectedTaskId: s.selectedTaskId === id ? null : s.selectedTaskId,
     }));
     await tauriInvoke("delete_task", { id });
+  },
+
+  appendTaskProgress: async (taskId, content) => {
+    await tauriInvoke("append_task_progress", { taskId, content });
   },
 
   moveTask: async (id, status) => {

@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 // Domain models (matching database schema)
 // ---------------------------------------------------------------------------
 
+/// A progress log entry for phased task tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgressEntry {
+    pub content: String,
+    pub recorded_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -21,6 +28,8 @@ pub struct Task {
     pub stakeholder: Option<String>,
     pub dependencies: Vec<String>,
     pub source_text: Option<String>,
+    #[serde(default)]
+    pub progress_log: Vec<ProgressEntry>,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -132,6 +141,8 @@ pub struct CreateTaskRequest {
     #[serde(default)]
     pub dependencies: Vec<String>,
     pub source_text: Option<String>,
+    #[serde(default)]
+    pub progress_log: Vec<ProgressEntry>,
 }
 
 fn default_priority() -> i32 {
@@ -189,6 +200,7 @@ impl CreateTaskRequest {
             stakeholder: self.stakeholder,
             dependencies: self.dependencies,
             source_text: self.source_text,
+            progress_log: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
             completed_at: None,

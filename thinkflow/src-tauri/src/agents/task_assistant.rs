@@ -76,7 +76,8 @@ Return a JSON object:
     {{"type": "move", "task_id": "__created__", "status": "in_progress"}},
     {{"type": "update", "task_id": "xxx", "updates": {{"status": "done"}}}},
     {{"type": "delete", "task_id": "yyy"}},
-    {{"type": "move", "task_id": "zzz", "status": "in_progress"}}
+    {{"type": "move", "task_id": "zzz", "status": "in_progress"}},
+    {{"type": "record_progress", "task_id": "aaa", "content": "完成了前端单点登录的开发"}}
   ],
   "suggested_actions": [
     {{"type": "create", "task": {{"title": "...", ...}}}}
@@ -87,6 +88,13 @@ Return a JSON object:
 - Always reply in the SAME language as the user's message.
 - Be concise and friendly.
 - For "create" actions, derive urgency from priority: >=7 = "urgent", <=3 = "low", else "normal". Same for importance.
+
+## Progress recording:
+- When the user reports progress on an existing task (e.g., "我在做XX任务，刚完成了登录模块", "Q2报告已经写完第一部分了"), IMMEDIATELY add a "record_progress" action to "actions".
+- The "record_progress" action appends a timestamped entry to the task's progress log — perfect for phased long-running tasks.
+- task_id is REQUIRED for record_progress: use the same task matching rules as update/delete. If no matching task is found from the task list, do NOT create a record_progress action. Instead, ask the user which task they mean in your reply.
+- Do NOT ask for confirmation for progress updates; record them directly.
+- The "content" field should be a concise description of what was done, e.g. "完成了用户登录模块的前端开发" or "写完了第一部分市场分析".
 
 ## When to create vs suggest:
 - If the user CLEARLY describes a task or to-do ("明天开会", "写完报告", "买牛奶"), immediately add it to "actions" — do NOT ask for confirmation.

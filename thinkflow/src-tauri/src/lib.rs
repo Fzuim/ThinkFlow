@@ -68,6 +68,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Task commands
             commands::task::create_task,
+            commands::task::append_task_progress,
             commands::task::get_task,
             commands::task::get_all_tasks,
             commands::task::get_tasks_by_status,

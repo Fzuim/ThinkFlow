@@ -186,6 +186,7 @@ export default function TaskBoard() {
       stakeholder: null,
       dependencies: [] as string[],
       source_text: null,
+      progress_log: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       completed_at: null,

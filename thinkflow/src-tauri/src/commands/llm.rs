@@ -426,6 +426,7 @@ pub struct TaskAssistantAction {
     pub task: Option<serde_json::Value>,
     pub updates: Option<serde_json::Value>,
     pub status: Option<String>,
+    pub content: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -542,6 +543,7 @@ pub async fn task_assistant(
                         task: a.get("task").cloned(),
                         updates: a.get("updates").cloned(),
                         status: a["status"].as_str().map(String::from),
+                        content: a["content"].as_str().map(String::from),
                     })
                 })
                 .collect()
@@ -560,6 +562,7 @@ pub async fn task_assistant(
                         task: a.get("task").cloned(),
                         updates: a.get("updates").cloned(),
                         status: a["status"].as_str().map(String::from),
+                        content: a["content"].as_str().map(String::from),
                     })
                 })
                 .collect()
@@ -717,6 +720,7 @@ pub async fn task_assistant_stream(
                                 task: a.get("task").cloned(),
                                 updates: a.get("updates").cloned(),
                                 status: a["status"].as_str().map(String::from),
+                        content: a["content"].as_str().map(String::from),
                             })
                         })
                         .collect()
@@ -735,6 +739,7 @@ pub async fn task_assistant_stream(
                                 task: a.get("task").cloned(),
                                 updates: a.get("updates").cloned(),
                                 status: a["status"].as_str().map(String::from),
+                        content: a["content"].as_str().map(String::from),
                             })
                         })
                         .collect()
