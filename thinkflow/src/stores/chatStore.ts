@@ -97,6 +97,7 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
         stakeholder: (t.stakeholder as string) ?? null,
         dependencies: [],
         source_text: null,
+        progress_log: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         completed_at: null,
