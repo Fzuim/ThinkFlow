@@ -111,6 +111,43 @@ pub fn update_task_status(
         .map_err(|e| e.to_string())
 }
 
+/// Append a progress entry to a task.
+#[tauri::command]
+pub fn append_task_progress(
+    db: State<Database>,
+    task_id: String,
+    content: String,
+) -> Result<(), String> {
+    if task_id.trim().is_empty() {
+        return Err("Task ID must not be empty".to_string());
+    }
+    if content.trim().is_empty() {
+        return Err("Progress content must not be empty".to_string());
+    }
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let progress_line = format!("{}  {}", now, content);
+
+    let conn = db.conn.lock().map_err(|_| "DB lock failed".to_string())?;
+    let desc: String = conn.query_row(
+        "SELECT description FROM tasks WHERE id = ?1",
+        rusqlite::params![task_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("{}", e))?;
+
+    let new_desc = if desc.trim().is_empty() {
+        progress_line
+    } else {
+        format!("{}\n\n{}", desc, progress_line)
+    };
+
+    conn.execute(
+        "UPDATE tasks SET description = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![new_desc, now, task_id],
+    ).map_err(|e| format!("{}", e))?;
+
+    Ok(())
+}
+
 /// Delete a task by ID.
 #[tauri::command]
 pub fn delete_task(db: State<Database>, id: String) -> Result<(), String> {

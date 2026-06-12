@@ -18,11 +18,12 @@ function isAbortError(e: unknown): boolean {
 }
 
 export interface AssistantAction {
-  type: "create" | "update" | "delete" | "move";
+  type: "create" | "update" | "delete" | "move" | "record_progress";
   task_id?: string;
   task?: Record<string, unknown>;
   updates?: Record<string, unknown>;
   status?: string;
+  content?: string;
 }
 
 export interface ActionResult {
@@ -124,8 +125,23 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
       await taskStore.moveTask(action.task_id, action.status as Task["status"]);
       return { success: true, taskTitle: toMove.title };
     }
+    case "record_progress": {
+      console.log("[FRONTEND] record_progress case entered", action);
+      const progressContent = action.content || "";
+      if (!action.task_id && !progressContent) return { success: false, error: "Missing task_id and content" };
+      let taskId = action.task_id;
+      if (!taskId) {
+        const allTasks = taskStore.tasks;
+        const c = progressContent.toLowerCase();
+        const match = allTasks.find(t => c.includes(t.title.toLowerCase()) || t.title.toLowerCase().includes(c));
+        if (!match) return { success: false, error: "Cannot find matching task. Use exact task name from board." };
+        taskId = match.id;
+      }
+      await taskStore.appendTaskProgress(taskId, progressContent);
+      return { success: true };
+    }
     default:
-      return { success: false, error: `Unknown action type: ${action.type}` };
+      console.log("[FRONTEND] Unknown action type:", action.type, action); return { success: false, error: `Unknown action type: ${action.type}` };
   }
 }
 
