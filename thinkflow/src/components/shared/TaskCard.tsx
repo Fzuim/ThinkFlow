@@ -320,7 +320,7 @@ export default function TaskCard({
               }}
             >
               <Calendar size={10} />
-              {new Date(task.deadline).toLocaleDateString()}
+              {task.deadline.slice(0, 10)}
             </span>
           )}
         </div>

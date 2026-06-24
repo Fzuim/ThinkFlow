@@ -62,7 +62,7 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
       setTitle(task.title);
       setDescription(task.description);
       setPriority(task.priority);
-      setDeadline(task.deadline ?? "");
+      setDeadline(task.deadline?.slice(0, 10) ?? "");
       setCategory(task.category ?? "");
       setEnergyLevel(task.energy_level ?? "");
       setTags(task.tags);
