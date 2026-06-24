@@ -96,7 +96,7 @@ interface SettingsStore {
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
-  llmConfig: defaultConfigs.anthropic,
+  llmConfig: defaultConfigs.compatible,
   isConfigured: false,
   isSaving: false,
   isTesting: false,
