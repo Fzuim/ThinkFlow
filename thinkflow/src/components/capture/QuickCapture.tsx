@@ -134,7 +134,7 @@ QuickCapture.Modal = function QuickCaptureModal({ onClose }: QuickCaptureProps) 
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" style={{ width: "100%" }}>
       {/* Reply display */}
       {reply && (
         <div
@@ -161,6 +161,7 @@ QuickCapture.Modal = function QuickCaptureModal({ onClose }: QuickCaptureProps) 
         }}
         style={{
           width: "100%",
+          boxSizing: "border-box",
           resize: "none",
           background: "rgb(247, 243, 223)",
           border: "2.5px solid #c4b89e",
