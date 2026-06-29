@@ -101,11 +101,14 @@ function SuggestedActionsButtons({
   );
 }
 
+// Preserve draft input across page navigations (component mount/unmount cycles)
+let _draftInput = "";
+
 export default function TaskAssistant() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { messages, loading, error, streamingContent, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -138,6 +141,7 @@ export default function TaskAssistant() {
   );
 
   const handleTextareaChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    _draftInput = e.target.value;
     setInput(e.target.value);
     // Auto-grow
     e.target.style.height = "auto";
@@ -208,7 +212,7 @@ export default function TaskAssistant() {
                     e.currentTarget.style.background = "transparent";
                     e.currentTarget.style.borderColor = "#c4b89e";
                   }}
-                  onClick={() => { setInput(s); textareaRef.current?.focus(); }}
+                  onClick={() => { _draftInput = s; setInput(s); textareaRef.current?.focus(); }}
                 >
                   {s}
                 </button>
