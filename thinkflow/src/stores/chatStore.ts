@@ -7,6 +7,17 @@ const MAX_HISTORY = 100;
 // Abort controller for stopping AI response mid-stream
 let _abortStreamController: AbortController | null = null;
 
+// Configurable chat history rounds (default: 3 rounds = 6 messages)
+let _chatHistoryRounds = 3;
+
+export function setChatHistoryRounds(rounds: number) {
+  _chatHistoryRounds = Math.max(1, Math.min(20, rounds));
+}
+
+export function getChatHistoryRounds() {
+  return _chatHistoryRounds;
+}
+
 // Check if an error is from streaming abort
 function isAbortError(e: unknown): boolean {
   if (typeof e === "object" && e !== null) {
@@ -160,6 +171,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   streamingContent: "",
 
   init: async () => {
+    const rounds = await tauriInvoke<string>("get_setting", { key: "chat_history_rounds" });
+    if (rounds) {
+      const n = parseInt(rounds, 10);
+      if (!isNaN(n)) _chatHistoryRounds = Math.max(1, Math.min(20, n));
+    }
     const saved = await tauriInvoke<string>("get_setting", { key: HISTORY_KEY });
     if (saved) {
       try {
@@ -189,8 +205,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // Build history (only role + content) for the LLM context
       const currentMessages = get().messages;
+      const maxMessages = _chatHistoryRounds * 2;
       const historyPayload = currentMessages
-        .slice(-6)
+        .slice(-maxMessages)
         .map((m) => ({ role: m.role, content: m.content }));
 
       // Set up Tauri event listeners for streaming

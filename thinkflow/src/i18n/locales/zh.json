@@ -209,6 +209,7 @@
     "temperatureBalanced": "平衡",
     "temperatureCreative": "创意 (2)",
     "maxTokens": "最大输出 Token",
+    "chatHistoryRounds": "对话历史轮数",
     "testConnection": "测试连接",
     "save": "保存设置",
     "saved": "设置已保存",
