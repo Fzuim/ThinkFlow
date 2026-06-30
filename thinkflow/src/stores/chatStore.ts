@@ -190,7 +190,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Build history (only role + content) for the LLM context
       const currentMessages = get().messages;
       const historyPayload = currentMessages
-        .slice(-10)
+        .slice(-6)
         .map((m) => ({ role: m.role, content: m.content }));
 
       // Set up Tauri event listeners for streaming
