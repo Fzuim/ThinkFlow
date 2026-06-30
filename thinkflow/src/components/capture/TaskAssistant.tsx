@@ -110,6 +110,8 @@ export default function TaskAssistant() {
   const { messages, loading, error, streamingContent, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
   const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [historyRounds, setHistoryRounds] = useState(() => getChatHistoryRounds());
+  const [showRoundSlider, setShowRoundSlider] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -435,6 +437,60 @@ export default function TaskAssistant() {
               e.target.style.boxShadow = "0 3px 0 0 #d4c9b4";
             }}
           />
+          {/* Chat history rounds chip */}
+          <div style={{ position: "absolute", left: 8, bottom: 12, zIndex: 2 }}>
+            <div
+              onClick={() => setShowRoundSlider(!showRoundSlider)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 10px",
+                borderRadius: 20,
+                cursor: "pointer",
+                background: showRoundSlider ? "#B7C6E5" : "#f0e8d8",
+                border: "1.5px solid #c4b89e",
+                transition: "background 0.15s",
+                userSelect: "none",
+              }}
+            >
+              <MessageSquare size={14} style={{ color: "#725d42" }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#725d42" }}>{historyRounds}</span>
+            </div>
+            {showRoundSlider && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 36,
+                  left: 0,
+                  background: "#fffef7",
+                  border: "2px solid #c4b89e",
+                  borderRadius: 16,
+                  padding: "10px 14px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span style={{ fontSize: 11, color: "#9f927d" }}>{t("settings.chatHistoryRounds")}</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={historyRounds}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setHistoryRounds(v);
+                    setChatHistoryRounds(v);
+                  }}
+                  style={{ width: 80 }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#725d42", minWidth: 18, textAlign: "center" }}>{historyRounds}</span>
+              </div>
+            )}
+          </div>
           {loading ? (
             <Button
               type="primary"

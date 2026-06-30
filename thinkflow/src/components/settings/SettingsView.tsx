@@ -6,7 +6,6 @@ import { Select } from "animal-island-ui";
 import { Button } from "animal-island-ui";
 import { Icon } from "animal-island-ui";
 import { useSettingsStore, type ProviderType } from "@/stores/settingsStore";
-import { getChatHistoryRounds, setChatHistoryRounds } from "@/stores/chatStore";
 import {
   Save,
   Plug,
@@ -82,26 +81,6 @@ export default function SettingsView() {
     await fetchModels();
   };
 
-  const [historyRounds, setHistoryRounds] = useState(() => getChatHistoryRounds());
-
-  useEffect(() => {
-    import("@tauri-apps/api/core").then(({ invoke }) => {
-      invoke<string>("get_setting", { key: "chat_history_rounds" }).then((v) => {
-        if (v) {
-          const n = parseInt(v, 10);
-          if (!isNaN(n)) { setHistoryRounds(n); setChatHistoryRounds(n); }
-        }
-      }).catch(() => {});
-    });
-  }, []);
-
-  const handleHistoryRoundsChange = async (value: number) => {
-    const rounds = Math.max(1, Math.min(20, value));
-    setHistoryRounds(rounds);
-    setChatHistoryRounds(rounds);
-    const { invoke } = await import("@tauri-apps/api/core");
-    invoke("set_setting", { key: "chat_history_rounds", value: String(rounds) }).catch(() => {});
-  };
 
   const changeLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
@@ -165,26 +144,6 @@ export default function SettingsView() {
               </div>
             </div>
             <div />
-          </div>
-
-          {/* Chat history rounds */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-sm font-semibold shrink-0" style={{ color: "#725d42", minWidth: 80 }}>
-              {t("settings.chatHistoryRounds")}
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={1}
-                max={20}
-                value={historyRounds}
-                onChange={(e) => handleHistoryRoundsChange(parseInt(e.target.value, 10))}
-                style={{ width: 120 }}
-              />
-              <span className="text-sm font-semibold" style={{ color: "#725d42", minWidth: 24, textAlign: "center" }}>
-                {historyRounds}
-              </span>
-            </div>
           </div>
 
           {/* Row: Provider + Base URL */}
