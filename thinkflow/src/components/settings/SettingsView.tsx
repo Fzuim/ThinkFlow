@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Card } from "animal-island-ui";
 import { Input } from "animal-island-ui";
