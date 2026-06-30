@@ -2,7 +2,7 @@
 name = "thinkflow"
 version = "0.1.0"
 description = "ThinkFlow - AI Smart Todo Desktop App"
-authors = ["huangdq"]
+authors = ["ThinkFlow contributors"]
 license = "MIT"
 repository = ""
 edition = "2021"
