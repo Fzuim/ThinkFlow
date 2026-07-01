@@ -110,8 +110,8 @@ export default function TaskAssistant() {
   const { messages, loading, error, streamingContent, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
   const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [historyRounds, setHistoryRounds] = useState(() => getChatHistoryRounds());
-  const [showRoundSlider, setShowRoundSlider] = useState(false);
+  const [roundCount, setRoundCount] = useState(() => { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } });
+  const [showSlider, setShowSlider] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,6 +128,7 @@ export default function TaskAssistant() {
     if (!input.trim() || loading) return;
     sendMessage(input.trim());
     setInput("");
+    _draftInput = "";
     // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [input, loading, sendMessage]);
@@ -398,9 +399,13 @@ export default function TaskAssistant() {
       <div className="flex justify-center">
         <div
           style={{
-            position: "relative",
             width: "min(720px, calc(100vw - 64px))",
             maxWidth: "100%",
+            background: "rgb(247, 243, 223)",
+            border: "2.5px solid #c4b89e",
+            borderRadius: 18,
+            boxShadow: "0 3px 0 0 #d4c9b4",
+            overflow: "hidden",
           }}
         >
           <textarea
@@ -409,131 +414,112 @@ export default function TaskAssistant() {
             value={input}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            rows={3}
+            rows={2}
             disabled={loading}
             style={{
               width: "100%",
+              boxSizing: "border-box",
               resize: "none",
-              background: "rgb(247, 243, 223)",
-              border: "2.5px solid #c4b89e",
-              borderRadius: 18,
-              padding: "8px 48px 8px 16px",
+              background: "transparent",
+              border: "none",
+              borderRadius: 0,
+              padding: "8px 16px 4px 16px",
               fontSize: 14,
               fontWeight: 500,
               color: "#725d42",
               fontFamily: "inherit",
               outline: "none",
-              boxShadow: "0 3px 0 0 #d4c9b4",
-              transition: "border-color 0.25s, box-shadow 0.25s",
-            }}
-            onFocus={(e) => {
-              if (!loading) {
-                e.target.style.borderColor = "#ffcc00";
-                e.target.style.boxShadow = "0 3px 0 0 #e0b800, 0 0 0 3px rgba(255,204,0,0.15)";
-              }
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = "#c4b89e";
-              e.target.style.boxShadow = "0 3px 0 0 #d4c9b4";
             }}
           />
-          {/* Chat history rounds chip */}
-          <div style={{ position: "absolute", left: 8, bottom: 12, zIndex: 2 }}>
-            <div
-              onClick={() => setShowRoundSlider(!showRoundSlider)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "4px 10px",
-                borderRadius: 20,
-                cursor: "pointer",
-                background: showRoundSlider ? "#B7C6E5" : "#f0e8d8",
-                border: "1.5px solid #c4b89e",
-                transition: "background 0.15s",
-                userSelect: "none",
-              }}
-            >
-              <MessageSquare size={14} style={{ color: "#725d42" }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#725d42" }}>{historyRounds}</span>
-            </div>
-            {showRoundSlider && (
+          {/* Bottom bar: rounds chip (left) + send button (right) */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "2px 10px 6px 10px",
+            }}
+          >
+            {/* Rounds chip + popover */}
+            <div style={{ position: "relative" }}>
               <div
+                onClick={() => setShowSlider(!showSlider)}
                 style={{
-                  position: "absolute",
-                  bottom: 36,
-                  left: 0,
-                  background: "#fffef7",
-                  border: "2px solid #c4b89e",
-                  borderRadius: 16,
-                  padding: "10px 14px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
-                  whiteSpace: "nowrap",
+                  gap: 4,
+                  padding: "3px 9px",
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  background: "#f0e8d8",
+                  border: "1.5px solid #c4b89e",
+                  userSelect: "none",
                 }}
               >
-                <span style={{ fontSize: 11, color: "#9f927d" }}>{t("settings.chatHistoryRounds")}</span>
-                <input
-                  type="range"
-                  min={1}
-                  max={20}
-                  value={historyRounds}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    setHistoryRounds(v);
-                    setChatHistoryRounds(v);
-                  }}
-                  style={{ width: 80 }}
-                />
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#725d42", minWidth: 18, textAlign: "center" }}>{historyRounds}</span>
+                <Icon name="icon-chat" size={13} style={{ color: "#725d42" }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#725d42" }}>{roundCount}</span>
               </div>
+              {showSlider && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 32,
+                    left: 0,
+                    background: "#fffef7",
+                    border: "2px solid #c4b89e",
+                    borderRadius: 14,
+                    padding: "8px 12px",
+                    boxShadow: "0 3px 10px rgba(0,0,0,0.1)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    zIndex: 10,
+                  }}
+                >
+                  <input type="range" min={1} max={20} value={roundCount} onChange={(e) => { const v = parseInt(e.target.value, 10); setRoundCount(v); localStorage.setItem("thinkflow_chat_rounds", String(v)); }} style={{ width: 70 }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#725d42" }}>{roundCount}</span>
+                </div>
+              )}
+            </div>
+            {/* Send / Stop button */}
+            {loading ? (
+              <Button
+                type="primary"
+                onClick={stopStreaming}
+                style={{
+                  minWidth: 36,
+                  height: 36,
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "50%",
+                  background: "#e05a5a",
+                  borderColor: "#e05a5a",
+                  boxShadow: "0 3px 0 0 #c94444",
+                }}
+              >
+                <Square size={16} fill="#fff" />
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                onClick={handleSend}
+                disabled={!input.trim()}
+                style={{
+                  minWidth: 36,
+                  height: 36,
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "50%",
+                }}
+              >
+                <Send size={16} />
+              </Button>
             )}
           </div>
-          {loading ? (
-            <Button
-              type="primary"
-              onClick={stopStreaming}
-              style={{
-                position: "absolute",
-                right: 8,
-                bottom: 12,
-                minWidth: 36,
-                height: 36,
-                padding: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "50%",
-                background: "#e05a5a",
-                borderColor: "#e05a5a",
-                boxShadow: "0 3px 0 0 #c94444",
-              }}
-            >
-              <Square size={16} fill="#fff" />
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              onClick={handleSend}
-              disabled={!input.trim()}
-              style={{
-                position: "absolute",
-                right: 8,
-                bottom: 12,
-                minWidth: 36,
-                height: 36,
-                padding: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "50%",
-              }}
-            >
-              <Send size={16} />
-            </Button>
-          )}
         </div>
       </div>
     </div>
