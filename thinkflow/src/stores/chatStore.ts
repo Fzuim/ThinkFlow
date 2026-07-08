@@ -3,20 +3,12 @@ import { useTaskStore, type Task } from "@/stores/taskStore";
 
 const HISTORY_KEY = "task_assistant_history";
 const MAX_HISTORY = 100;
+function readChatRounds(): number { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } }
+
 
 // Abort controller for stopping AI response mid-stream
 let _abortStreamController: AbortController | null = null;
 
-// Configurable chat history rounds (default: 3 rounds = 6 messages)
-let _chatHistoryRounds = 3;
-
-export function setChatHistoryRounds(rounds: number) {
-  _chatHistoryRounds = Math.max(1, Math.min(20, rounds));
-}
-
-export function getChatHistoryRounds() {
-  return _chatHistoryRounds;
-}
 
 // Check if an error is from streaming abort
 function isAbortError(e: unknown): boolean {
@@ -174,7 +166,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const rounds = await tauriInvoke<string>("get_setting", { key: "chat_history_rounds" });
     if (rounds) {
       const n = parseInt(rounds, 10);
-      if (!isNaN(n)) _chatHistoryRounds = Math.max(1, Math.min(20, n));
+      if (!isNaN(n)) localStorage.setItem("thinkflow_chat_rounds", String(Math.max(1, Math.min(20, n))));
     }
     const saved = await tauriInvoke<string>("get_setting", { key: HISTORY_KEY });
     if (saved) {
@@ -205,7 +197,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // Build history (only role + content) for the LLM context
       const currentMessages = get().messages;
-      const maxMessages = _chatHistoryRounds * 2;
+      const maxMessages = readChatRounds() * 2;
       const historyPayload = currentMessages
         .slice(-maxMessages)
         .map((m) => ({ role: m.role, content: m.content }));

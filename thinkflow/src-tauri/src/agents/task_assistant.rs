@@ -12,7 +12,6 @@ impl TaskAssistantAgent {
         history: &[ChatMessage],
     ) -> ChatCompletionRequest {
         let now = Local::now();
-        let today = now.format("%Y-%m-%d").to_string();
         let today_full = now.format("%Y-%m-%d (%A)").to_string();
         let now_str = now.format("%Y-%m-%dT%H:%M:%S").to_string();
 
@@ -30,9 +29,15 @@ impl TaskAssistantAgent {
                 .map(|d| d.as_str())
                 .unwrap_or("-");
             let cat = t.category.as_deref().unwrap_or("none");
+            let created_str = t.created_at.as_str();
+            let completed_str = t
+                .completed_at
+                .as_ref()
+                .map(|c| c.as_str())
+                .unwrap_or("-");
             task_list.push_str(&format!(
-                "[id:{}] \"{}\" | status:{} | priority:{} | deadline:{} | category:{}\n",
-                t.id, t.title, t.status, t.priority, deadline_str, cat
+                "[id:{}] \"{}\" | status:{} | priority:{} | deadline:{} | category:{} | created:{} | completed:{}\n",
+                t.id, t.title, t.status, t.priority, deadline_str, cat, created_str, completed_str
             ));
         }
         if visible_tasks.is_empty() {
@@ -54,6 +59,13 @@ You are a task management assistant. The user speaks to you in natural language.
 IMPORTANT: The task list below is the CURRENT state from the database. Users may have manually changed task statuses since your last conversation. ALWAYS trust the task list below over any previous conversation history. If a task shows status "todo" in the list, treat it as todo regardless of what you said before.
 
 {task_list}{memory_section}
+
+## 时间筛选规则（重要）:
+- 任务列表中每个任务都带有 `created`（创建时间）和 `completed`（完成时间，"-"表示未完成）字段，格式为 ISO 8601（如 2026-07-05T10:30:00）。
+- 当用户询问包含时间范围的问题（如"本周完成了什么""昨天做了什么""上个月的任务""最近三天"等），你**必须**根据上方的当前日期自主推算时间范围，并按对应时间字段筛选任务，只返回落在该范围内的任务。
+- **字段选择**：用户问"完成/做完了什么"→ 按 `completed` 筛选；用户问"创建/添加了什么"→ 按 `created` 筛选；模糊表述→优先按 `completed`。
+- **绝对不要**把所有已完成任务都列出来。用户说"本周"就只列本周，说"昨天"就只列昨天。
+- 如果一个 status 为 done 的任务 completed 字段为 "-" 或为空，说明未记录完成时间，不要列入"完成"类时间筛选结果。
 
 ## Supported action types:
 - **create**: Create a new task. Include fields: title, priority (1-10), deadline (ISO 8601, resolve relative times like "下周一" using current date), category ("work"|"life"|"study"|"health"), energy_level ("deep"|"medium"|"shallow"), stakeholder (person name if mentioned), tags (keyword array).
