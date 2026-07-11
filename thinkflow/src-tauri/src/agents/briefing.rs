@@ -138,7 +138,7 @@ impl BriefingAgent {
 
 {task_note}
 
-语气要温暖、简洁、自然。使用纯文本，仅用加粗标记标题。
+语气要温暖、简洁、自然。使用 Markdown 格式排版，可使用二级/三级标题（## / ###）、无序列表（- ）、有序列表、加粗（**文字**）等语法让简报层次清晰、易于阅读。
 
 返回 JSON 对象：{{"briefing": "完整的简报文本"}}"#,
             friday_note = if is_friday { format!("本周一: {}", week_start.as_ref().unwrap()) } else { String::new() },

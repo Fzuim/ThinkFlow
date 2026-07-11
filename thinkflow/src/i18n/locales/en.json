@@ -156,7 +156,9 @@
     "error": "Failed to generate",
     "noLlm": "LLM not configured",
     "noLlmHint": "Configure an LLM provider in Settings.",
-    "goToSettings": "Go to Settings"
+    "goToSettings": "Go to Settings",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "fable": {
     "title": "Inspiration",
