@@ -310,7 +310,7 @@ export default function FableView() {
             <h3 className="text-lg font-semibold mb-1" style={{ color: "#725d42" }}>
               {t("fable.title")}
             </h3>
-            <p className="text-sm max-w-xs" style={{ color: "#9f927d" }}>
+            <p className="text-sm max-w-xl" style={{ color: "#9f927d" }}>
               {t("fable.description")}
             </p>
           </div>

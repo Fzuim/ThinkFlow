@@ -155,7 +155,9 @@
     "error": "生成失败",
     "noLlm": "需要先配置 LLM",
     "noLlmHint": "在设置中配置 LLM 服务商。",
-    "goToSettings": "前往设置"
+    "goToSettings": "前往设置",
+    "copy": "复制",
+    "copied": "已复制"
   },
   "fable": {
     "title": "灵感卡片",
