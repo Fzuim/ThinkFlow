@@ -28,7 +28,6 @@ pub fn create_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     let handle_clone = handle.clone();
     let _tray = TrayIconBuilder::with_id("thinkflow-tray")
         .icon(icon)
-        .icon_as_template(true)
         .tooltip("ThinkFlow")
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id.as_ref() {
