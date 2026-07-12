@@ -5,7 +5,7 @@ import { useTaskStore } from "@/stores/taskStore";
 import { Modal } from "animal-island-ui";
 import { Input } from "animal-island-ui";
 import { Select } from "animal-island-ui";
-import { X } from "lucide-react";
+import { X, Maximize2, Minimize2 } from "lucide-react";
 
 interface TaskEditModalProps {
   open: boolean;
@@ -55,6 +55,7 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [estimatedDuration, setEstimatedDuration] = useState("");
+  const [descExpanded, setDescExpanded] = useState(false);
 
   // Sync form with task when opened
   useEffect(() => {
@@ -152,14 +153,47 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
           <label className="text-xs font-semibold mb-1 block" style={{ color: "#9f927d" }}>
             {t("taskEdit.description")}
           </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={t("taskEdit.descriptionPlaceholder")}
-            rows={2}
-            style={inputStyle}
-            {...focusHandlers}
-          />
+          <div style={{ position: "relative" }}>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t("taskEdit.descriptionPlaceholder")}
+              rows={descExpanded ? 6 : 2}
+              style={{ ...inputStyle, paddingRight: 38 }}
+              {...focusHandlers}
+            />
+            <button
+              type="button"
+              onClick={() => setDescExpanded((v) => !v)}
+              title={descExpanded ? t("taskEdit.collapse") : t("taskEdit.expand")}
+              style={{
+                position: "absolute",
+                right: 10,
+                bottom: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                border: "none",
+                background: "rgba(197, 184, 158, 0.25)",
+                color: "#9f927d",
+                cursor: "pointer",
+                transition: "background 0.2s, color 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255, 204, 0, 0.3)";
+                e.currentTarget.style.color = "#725d42";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(197, 184, 158, 0.25)";
+                e.currentTarget.style.color = "#9f927d";
+              }}
+            >
+              {descExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </button>
+          </div>
         </div>
 
         {/* Priority + Duration row */}

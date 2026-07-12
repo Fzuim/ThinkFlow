@@ -228,6 +228,8 @@
     "titleField": "Title",
     "description": "Description",
     "descriptionPlaceholder": "Add a description...",
+    "expand": "Expand",
+    "collapse": "Collapse",
     "priority": "Priority",
     "deadline": "Deadline",
     "category": "Category",

@@ -227,6 +227,8 @@
     "titleField": "标题",
     "description": "描述",
     "descriptionPlaceholder": "添加描述...",
+    "expand": "展开",
+    "collapse": "收起",
     "priority": "优先级",
     "deadline": "截止日期",
     "category": "分类",
