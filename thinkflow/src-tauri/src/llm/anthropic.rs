@@ -90,8 +90,8 @@ impl LlmProvider for AnthropicProvider {
         // thinking is enabled, the first block is a "thinking" block (which has a
         // "thinking" field, NOT a "text" field). We must iterate to find the
         // "text" block — otherwise content ends up empty.
-        let content = json["content"]
-            .as_array()
+        let content_array = json["content"].as_array();
+        let content = content_array
             .and_then(|arr| {
                 // Prefer a text block; fall back to the first block's "text" field
                 arr.iter()
@@ -102,7 +102,16 @@ impl LlmProvider for AnthropicProvider {
             .unwrap_or("")
             .to_string();
 
-        Ok(ChatCompletionResponse { content })
+        // Extract thinking block content (if present)
+        let reasoning = content_array
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|block| block["type"].as_str() == Some("thinking"))
+                    .and_then(|block| block["thinking"].as_str())
+            })
+            .map(|s| s.to_string());
+
+        Ok(ChatCompletionResponse { content, reasoning })
     }
 
     async fn list_models(

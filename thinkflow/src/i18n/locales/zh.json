@@ -86,6 +86,7 @@
     "placeholder": "告诉我你需要什么… (⌘/Ctrl+Enter 发送)",
     "send": "发送",
     "thinking": "思考中...",
+    "thoughtProcess": "思考过程",
     "clearChat": "清空",
     "welcome": "你好！我是你的任务助手，可以帮你创建、修改、删除和整理任务。用自然语言告诉我就行。",
     "suggestions": {

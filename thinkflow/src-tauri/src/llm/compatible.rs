@@ -53,13 +53,19 @@ impl CompatibleProvider {
         body
     }
 
-    fn parse_chat_response(json: &serde_json::Value) -> String {
-        json["choices"]
+    fn parse_chat_response(json: &serde_json::Value) -> (String, Option<String>) {
+        let choice = json["choices"]
             .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|choice| choice["message"]["content"].as_str())
+            .and_then(|arr| arr.first());
+        let content = choice
+            .and_then(|c| c["message"]["content"].as_str())
             .unwrap_or("")
-            .to_string()
+            .to_string();
+        // Extract reasoning_content (e.g. DeepSeek R1 via compatible endpoint)
+        let reasoning = choice
+            .and_then(|c| c["message"]["reasoning_content"].as_str())
+            .map(|s| s.to_string());
+        (content, reasoning)
     }
 }
 
@@ -92,8 +98,14 @@ impl LlmProvider for CompatibleProvider {
         let json: serde_json::Value =
             resp.json().await.map_err(|e| LlmError::Parse(e.to_string()))?;
 
-        let content = Self::parse_chat_response(&json);
-        Ok(ChatCompletionResponse { content })
+        let content;
+        let reasoning;
+        {
+            let (c, r) = Self::parse_chat_response(&json);
+            content = c;
+            reasoning = r;
+        }
+        Ok(ChatCompletionResponse { content, reasoning })
     }
 
     async fn chat_stream(
@@ -122,6 +134,7 @@ impl LlmProvider for CompatibleProvider {
         }
 
         let mut full_content = String::new();
+        let mut full_reasoning = String::new();
         let mut buf = String::new();
 
         while let Some(chunk) = resp.chunk().await.map_err(|e| LlmError::Network(e.to_string()))? {
@@ -139,13 +152,20 @@ impl LlmProvider for CompatibleProvider {
                             break;
                         }
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(content) = json["choices"]
+                            let choice = json["choices"]
                                 .as_array()
-                                .and_then(|arr| arr.first())
-                                .and_then(|choice| choice["delta"]["content"].as_str())
+                                .and_then(|arr| arr.first());
+                            if let Some(content) = choice
+                                .and_then(|c| c["delta"]["content"].as_str())
                             {
                                 full_content.push_str(content);
                                 let _ = tx.send(content.to_string());
+                            }
+                            // Accumulate reasoning_content from stream
+                            if let Some(reasoning_chunk) = choice
+                                .and_then(|c| c["delta"]["reasoning_content"].as_str())
+                            {
+                                full_reasoning.push_str(reasoning_chunk);
                             }
                         }
                     }
@@ -155,7 +175,8 @@ impl LlmProvider for CompatibleProvider {
             }
         }
 
-        Ok(ChatCompletionResponse { content: full_content })
+        let reasoning = if full_reasoning.is_empty() { None } else { Some(full_reasoning) };
+        Ok(ChatCompletionResponse { content: full_content, reasoning })
     }
 
     async fn list_models(

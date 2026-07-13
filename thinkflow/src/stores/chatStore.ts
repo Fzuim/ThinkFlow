@@ -39,6 +39,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
   actions?: AssistantAction[];
   actionResults?: ActionResult[];
   suggestedActions?: AssistantAction[];
@@ -52,6 +53,7 @@ interface ChatStore {
   error: string | null;
   isLoaded: boolean;
   streamingContent: string;
+  streamingReasoning: string;
 
   init: () => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -153,6 +155,7 @@ interface TaskAssistantResponse {
   reply: string;
   actions: AssistantAction[];
   suggested_actions: AssistantAction[];
+  reasoning?: string;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -161,6 +164,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   error: null,
   isLoaded: false,
   streamingContent: "",
+  streamingReasoning: "",
 
   init: async () => {
     const rounds = await tauriInvoke<string>("get_setting", { key: "chat_history_rounds" });
@@ -189,7 +193,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       timestamp: new Date().toISOString(),
     };
 
-    set((s) => ({ messages: [...s.messages, userMsg], loading: true, error: null, streamingContent: "" }));
+    set((s) => ({ messages: [...s.messages, userMsg], loading: true, error: null, streamingContent: "", streamingReasoning: "" }));
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -206,13 +210,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       let donePayload: TaskAssistantResponse | null = null;
       let errorPayload: string | null = null;
 
+      // Listen for thinking/reasoning chunks (streamed before reply)
+      const unlistenThinking = await listen<{ chunk: string }>("task-assistant:thinking", (event) => {
+        set((s) => ({ streamingReasoning: s.streamingReasoning + event.payload.chunk }));
+      });
+
       // Listen for content chunks (typewriter effect)
       const unlistenChunk = await listen<{ chunk: string }>("task-assistant:chunk", (event) => {
         set((s) => ({ streamingContent: s.streamingContent + event.payload.chunk }));
       });
 
       // Listen for completion
-      const unlistenDone = await listen<{ reply: string; actions: AssistantAction[]; suggested_actions: AssistantAction[] }>(
+      const unlistenDone = await listen<{ reply: string; actions: AssistantAction[]; suggested_actions: AssistantAction[]; reasoning?: string }>(
         "task-assistant:done",
         (event) => {
           donePayload = event.payload as unknown as TaskAssistantResponse;
@@ -236,11 +245,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } catch (e: any) {
         // Check if streaming was cancelled by user
         if (isAbortError(e)) {
+          unlistenThinking();
           unlistenChunk();
           unlistenDone();
           unlistenError();
           _abortStreamController = null;
-          set({ loading: false, streamingContent: "" });
+          set({ loading: false, streamingContent: "", streamingReasoning: "" });
           return;
         }
         // Rethrow non-abort errors for outer catch to handle
@@ -249,6 +259,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Clean up listeners and capture payloads into local variables
       // (TypeScript cannot narrow closure-assigned variables, so we
       //  capture them into locals after the callbacks have completed.)
+      unlistenThinking();
       unlistenChunk();
       unlistenDone();
       unlistenError();
@@ -258,15 +269,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       if (finalErrorPayload) {
         if (finalErrorPayload.includes("API key") || finalErrorPayload.includes("api key") || finalErrorPayload.includes("not configured")) {
-          set({ error: "no_llm", loading: false, streamingContent: "" });
+          set({ error: "no_llm", loading: false, streamingContent: "", streamingReasoning: "" });
         } else {
-          set({ error: finalErrorPayload, loading: false, streamingContent: "" });
+          set({ error: finalErrorPayload, loading: false, streamingContent: "", streamingReasoning: "" });
         }
         return;
       }
 
       if (!finalDonePayload) {
-        set({ error: "No response from AI", loading: false, streamingContent: "" });
+        set({ error: "No response from AI", loading: false, streamingContent: "", streamingReasoning: "" });
         return;
       }
 
@@ -298,6 +309,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         id: crypto.randomUUID(),
         role: "assistant",
         content: finalDonePayload.reply,
+        reasoning: finalDonePayload.reasoning || undefined,
         actions: finalDonePayload.actions,
         actionResults,
         suggestedActions: finalDonePayload.suggested_actions?.length > 0 ? finalDonePayload.suggested_actions : undefined,
@@ -308,7 +320,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set((s) => {
         const newMessages = [...s.messages, assistantMsg];
         persistMessages(newMessages).catch(() => {});
-        return { messages: newMessages, loading: false, streamingContent: "" };
+        return { messages: newMessages, loading: false, streamingContent: "", streamingReasoning: "" };
       });
     } catch (e: any) {
       // Outer catch (e.g. dynamic import failure)
@@ -326,9 +338,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       if (message.includes("API key") || message.includes("api key") || message.includes("not configured")) {
-        set({ error: "no_llm", loading: false, streamingContent: "" });
+        set({ error: "no_llm", loading: false, streamingContent: "", streamingReasoning: "" });
       } else {
-        set({ error: message, loading: false, streamingContent: "" });
+        set({ error: message, loading: false, streamingContent: "", streamingReasoning: "" });
       }
     }
   },
@@ -383,7 +395,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       _abortStreamController.abort();
       _abortStreamController = null;
     }
-    set({ loading: false, error: null, streamingContent: "" });
+    set({ loading: false, error: null, streamingContent: "", streamingReasoning: "" });
   },
 
   clearChat: () => {

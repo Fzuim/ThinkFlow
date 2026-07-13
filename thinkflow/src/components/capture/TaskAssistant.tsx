@@ -15,6 +15,8 @@ import {
   Check,
   Copy,
   X,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -101,19 +103,77 @@ function SuggestedActionsButtons({
   );
 }
 
+function ReasoningSection({
+  reasoning,
+  messageId,
+  expanded,
+  onToggle,
+}: {
+  reasoning: string;
+  messageId: string;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => onToggle(messageId)}
+        className="flex items-center gap-1 text-xs transition-opacity hover:opacity-100"
+        style={{ color: "#9f927d", opacity: 0.7, cursor: "pointer" }}
+      >
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span>{t("taskAssistant.thoughtProcess")}</span>
+      </button>
+      {expanded && (
+        <div
+          className="mt-1.5 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap"
+          style={{
+            borderRadius: 10,
+            background: "rgba(114,93,66,0.06)",
+            color: "#9f927d",
+            borderLeft: "2px solid rgba(114,93,66,0.15)",
+          }}
+        >
+          {reasoning}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Preserve draft input across page navigations (component mount/unmount cycles)
 let _draftInput = "";
 
 export default function TaskAssistant() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { messages, loading, error, streamingContent, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
+  const { messages, loading, error, streamingContent, streamingReasoning, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
   const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [roundCount, setRoundCount] = useState(() => { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } });
   const [showSlider, setShowSlider] = useState(false);
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const toggleReasoning = useCallback((id: string) => {
+    setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Auto-expand reasoning when thinking starts; auto-collapse when reply starts
+  const [streamingReasoningExpanded, setStreamingReasoningExpanded] = useState(true);
+  useEffect(() => {
+    if (streamingReasoning) setStreamingReasoningExpanded(true);
+  }, [streamingReasoning]);
+  useEffect(() => {
+    if (streamingContent) setStreamingReasoningExpanded(false);
+  }, [streamingContent]);
 
   useEffect(() => { init(); }, [init]);
 
@@ -122,7 +182,7 @@ export default function TaskAssistant() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages.length, loading, streamingContent]);
+  }, [messages.length, loading, streamingContent, streamingReasoning]);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || loading) return;
@@ -276,6 +336,14 @@ export default function TaskAssistant() {
                   color: "#725d42",
                 }}
               >
+                {msg.reasoning && (
+                  <ReasoningSection
+                    reasoning={msg.reasoning}
+                    messageId={msg.id}
+                    expanded={expandedReasoning.has(msg.id)}
+                    onToggle={toggleReasoning}
+                  />
+                )}
                 <p className="whitespace-pre-wrap">{msg.content}</p>
                 <ActionBadges actions={msg.actions} results={msg.actionResults} />
                 {msg.suggestedActions && msg.suggestedActions.length > 0 && (
@@ -331,6 +399,14 @@ export default function TaskAssistant() {
                   color: "#725d42",
                 }}
               >
+                {streamingReasoning && (
+                  <ReasoningSection
+                    reasoning={streamingReasoning}
+                    messageId="streaming"
+                    expanded={streamingReasoningExpanded}
+                    onToggle={() => setStreamingReasoningExpanded((prev) => !prev)}
+                  />
+                )}
                 <p className="whitespace-pre-wrap">
                   {streamingContent}
                   <span
@@ -342,15 +418,36 @@ export default function TaskAssistant() {
                   />
                 </p>
               </div>
+            ) : streamingReasoning ? (
+              <div
+                className="px-3.5 py-2.5 text-sm leading-relaxed"
+                style={{
+                  borderRadius: 18,
+                  background: "#f0e8d8",
+                  color: "#725d42",
+                }}
+              >
+                <ReasoningSection
+                  reasoning={streamingReasoning}
+                  messageId="streaming"
+                  expanded={streamingReasoningExpanded}
+                  onToggle={() => setStreamingReasoningExpanded((prev) => !prev)}
+                />
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Loader2 size={13} className="animate-spin" style={{ color: "#9f927d" }} />
+                  <span className="text-xs" style={{ color: "#9f927d" }}>{t("taskAssistant.thinking")}</span>
+                </div>
+              </div>
             ) : (
               <div
-                className="px-3.5 py-2.5"
+                className="px-3.5 py-2.5 flex items-center gap-2"
                 style={{
                   borderRadius: 18,
                   background: "#f0e8d8",
                 }}
               >
                 <Loader2 size={16} className="animate-spin" style={{ color: "#9f927d" }} />
+                <span className="text-sm" style={{ color: "#9f927d" }}>{t("taskAssistant.thinking")}</span>
               </div>
             )}
 

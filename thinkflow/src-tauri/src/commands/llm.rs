@@ -434,6 +434,8 @@ pub struct TaskAssistantResult {
     pub reply: String,
     pub actions: Vec<TaskAssistantAction>,
     pub suggested_actions: Vec<TaskAssistantAction>,
+    /// LLM thinking / reasoning content (if the model produced any)
+    pub reasoning: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +643,8 @@ fn apply_model_config(
     request
 }
 
-/// Execute the two-stage LLM call and return the final parsed JSON.
+/// Execute the two-stage LLM call and return the final parsed JSON
+/// along with any reasoning/thinking content produced by the model.
 ///
 /// Stage 1: inject only active (todo + in_progress) tasks.
 /// Stage 2 (if the LLM requests it): also inject completed/archived tasks
@@ -652,7 +655,7 @@ async fn do_task_assistant_llm(
     message: &str,
     memory_context: &str,
     chat_history: &[ChatMessage],
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, Option<String>), String> {
     let active_tasks = get_active_tasks(db)?;
     let provider = crate::llm::provider::get_provider(&config.provider);
 
@@ -671,6 +674,7 @@ async fn do_task_assistant_llm(
         .await
         .map_err(|e| e.to_string())?;
     let mut parsed = parse_llm_json(&response.content);
+    let mut reasoning = response.reasoning.clone();
 
     // --- Stage 2: if LLM needs more info, retry with supplemented data ---
     let needs_completed = needs_completed_lookup(&parsed);
@@ -710,12 +714,13 @@ async fn do_task_assistant_llm(
             .await
             .map_err(|e| e.to_string())?;
         parsed = parse_llm_json(&response.content);
+        reasoning = response.reasoning.clone();
     }
 
     // Move delete actions to suggested_actions so the UI shows a confirmation button
     move_delete_to_suggested(&mut parsed);
 
-    Ok(parsed)
+    Ok((parsed, reasoning))
 }
 
 #[tauri::command]
@@ -750,14 +755,14 @@ pub async fn task_assistant(
     };
 
     // Two-stage LLM call: stage 1 with active tasks, stage 2 (if needed) with completed tasks
-    let parsed = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await?;
+    let (parsed, reasoning) = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await?;
 
     let reply = extract_reply_with_fallback(&parsed);
 
     let actions = parse_task_actions(parsed.get("actions"));
     let suggested_actions = parse_task_actions(parsed.get("suggested_actions"));
 
-    Ok(TaskAssistantResult { reply, actions, suggested_actions })
+    Ok(TaskAssistantResult { reply, actions, suggested_actions, reasoning })
 }
 
 // ---------------------------------------------------------------------------
@@ -770,10 +775,17 @@ pub struct StreamChunkPayload {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct StreamThinkingPayload {
+    pub chunk: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct StreamDonePayload {
     pub reply: String,
     pub actions: Vec<TaskAssistantAction>,
     pub suggested_actions: Vec<TaskAssistantAction>,
+    /// LLM thinking / reasoning content (if the model produced any)
+    pub reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -820,13 +832,28 @@ pub async fn task_assistant_stream(
     let result = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await;
 
     match result {
-        Ok(parsed) => {
+        Ok((parsed, reasoning)) => {
             let reply = extract_reply_with_fallback(&parsed);
 
             let actions = parse_task_actions(parsed.get("actions"));
             let suggested_actions = parse_task_actions(parsed.get("suggested_actions"));
 
-            // Stream reply text character by character for typewriter effect
+            // Phase 1: Stream reasoning (thinking) character by character if present.
+            // The frontend auto-expands the reasoning section while this is active,
+            // then auto-collapses it when Phase 2 (reply) begins.
+            if let Some(ref reasoning_text) = reasoning {
+                if !reasoning_text.is_empty() {
+                    for ch in reasoning_text.chars() {
+                        let _ = app_handle.emit(
+                            "task-assistant:thinking",
+                            StreamThinkingPayload { chunk: ch.to_string() },
+                        );
+                        tokio::time::sleep(Duration::from_millis(3)).await;
+                    }
+                }
+            }
+
+            // Phase 2: Stream reply text character by character for typewriter effect
             for ch in reply.chars() {
                 let _ = app_handle.emit(
                     "task-assistant:chunk",
@@ -837,7 +864,7 @@ pub async fn task_assistant_stream(
 
             let _ = app_handle.emit(
                 "task-assistant:done",
-                StreamDonePayload { reply, actions, suggested_actions },
+                StreamDonePayload { reply, actions, suggested_actions, reasoning },
             );
         }
         Err(e) => {

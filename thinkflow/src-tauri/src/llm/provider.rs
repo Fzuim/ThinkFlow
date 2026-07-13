@@ -65,6 +65,10 @@ pub struct ChatCompletionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionResponse {
     pub content: String,
+    /// LLM reasoning / thinking content (e.g. Anthropic thinking blocks,
+    /// DeepSeek R1 reasoning_content). None if the model didn't produce any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
 }
 
 // ── Model info ──────────────────────────────────────────────
@@ -105,7 +109,7 @@ pub trait LlmProvider: Send + Sync {
         _request: ChatCompletionRequest,
         _tx: UnboundedSender<String>,
     ) -> Result<ChatCompletionResponse, LlmError> {
-        Ok(ChatCompletionResponse { content: String::new() })
+        Ok(ChatCompletionResponse { content: String::new(), reasoning: None })
 
     }
     /// List available models for the configured provider.

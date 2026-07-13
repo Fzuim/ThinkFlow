@@ -87,6 +87,7 @@
     "placeholder": "Tell me what you need… (⌘/Ctrl+Enter to send)",
     "send": "Send",
     "thinking": "Thinking...",
+    "thoughtProcess": "Thought Process",
     "clearChat": "Clear",
     "welcome": "Hi! I'm your task assistant. I can create, update, delete, and organize your tasks. Just tell me what you need in natural language.",
     "suggestions": {
