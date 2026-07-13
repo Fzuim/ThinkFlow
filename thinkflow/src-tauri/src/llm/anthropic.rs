@@ -86,10 +86,19 @@ impl LlmProvider for AnthropicProvider {
         let json: serde_json::Value =
             resp.json().await.map_err(|e| LlmError::Parse(e.to_string()))?;
 
+        // Anthropic returns content as an array of blocks. When thinking/extended
+        // thinking is enabled, the first block is a "thinking" block (which has a
+        // "thinking" field, NOT a "text" field). We must iterate to find the
+        // "text" block — otherwise content ends up empty.
         let content = json["content"]
             .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|block| block["text"].as_str())
+            .and_then(|arr| {
+                // Prefer a text block; fall back to the first block's "text" field
+                arr.iter()
+                    .find(|block| block["type"].as_str() == Some("text"))
+                    .or_else(|| arr.first())
+                    .and_then(|block| block["text"].as_str())
+            })
             .unwrap_or("")
             .to_string();
 

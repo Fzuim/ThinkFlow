@@ -86,14 +86,36 @@ impl BriefingAgent {
                 .unwrap_or_else(|| "no deadline".to_string());
             let cat = t.category.as_deref().unwrap_or("none");
             let completed_info = t.completed_at.as_ref().map(|ca| format!(" | completed:{ca}")).unwrap_or_default();
+
+            // Inject description and progress log for tasks that have them
+            let mut detail_parts: Vec<String> = Vec::new();
+            if !t.description.is_empty() {
+                detail_parts.push(format!("desc: {}", t.description));
+            }
+            if !t.progress_log.is_empty() {
+                let progress_str = t
+                    .progress_log
+                    .iter()
+                    .map(|p| format!("[{}] {}", p.recorded_at, p.content))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                detail_parts.push(format!("progress: {}", progress_str));
+            }
+            let detail_info = if detail_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" | {}", detail_parts.join(" | "))
+            };
+
             task_list.push_str(&format!(
-                "- [{status}] \"{title}\" | priority:{prio}/10 | {deadline} | category:{cat}{completed_info}\n",
+                "- [{status}] \"{title}\" | priority:{prio}/10 | {deadline} | category:{cat}{completed_info}{detail_info}\n",
                 status = t.status,
                 title = t.title,
                 prio = t.priority,
                 deadline = deadline_str,
                 cat = cat,
                 completed_info = completed_info,
+                detail_info = detail_info,
             ));
         }
 

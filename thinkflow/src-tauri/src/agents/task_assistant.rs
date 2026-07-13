@@ -4,10 +4,45 @@ use chrono::Local;
 
 pub struct TaskAssistantAgent;
 
+/// Build a compact one-line-per-task summary for prompt injection.
+fn build_task_list(tasks: &[Task]) -> String {
+    if tasks.is_empty() {
+        return "(no tasks)\n".to_string();
+    }
+    let mut buf = String::new();
+    for t in tasks {
+        let deadline_str = t
+            .deadline
+            .as_ref()
+            .map(|d| d.as_str())
+            .unwrap_or("-");
+        let cat = t.category.as_deref().unwrap_or("none");
+        let created_str = t.created_at.as_str();
+        let completed_str = t
+            .completed_at
+            .as_ref()
+            .map(|c| c.as_str())
+            .unwrap_or("-");
+        buf.push_str(&format!(
+            "[id:{}] \"{}\" | status:{} | priority:{} | deadline:{} | category:{} | created:{} | completed:{}\n",
+            t.id, t.title, t.status, t.priority, deadline_str, cat, created_str, completed_str
+        ));
+    }
+    buf
+}
+
 impl TaskAssistantAgent {
+    /// Build the LLM chat request.
+    ///
+    /// * `active_tasks` — todo + in_progress tasks (always injected).
+    /// * `completed_tasks` — when `Some`, completed/archived tasks are also injected
+    ///   (second-stage lookup). When `None`, the prompt tells the LLM to emit a
+    ///   `query_completed_tasks` action if it needs to reference completed tasks.
     pub fn build_prompt(
         user_message: &str,
-        tasks: &[Task],
+        active_tasks: &[Task],
+        completed_tasks: Option<&[Task]>,
+        task_details: Option<&str>,
         memory_context: &str,
         history: &[ChatMessage],
     ) -> ChatCompletionRequest {
@@ -15,34 +50,34 @@ impl TaskAssistantAgent {
         let today_full = now.format("%Y-%m-%d (%A)").to_string();
         let now_str = now.format("%Y-%m-%dT%H:%M:%S").to_string();
 
-        // Build compact task summary (max 80 tasks including all statuses)
-        let mut task_list = String::from("Current tasks:\n");
-        let visible_tasks: Vec<&Task> = tasks
-            .iter()
-            .filter(|t| t.status != "cancelled")
-            .take(80)
-            .collect();
-        for t in &visible_tasks {
-            let deadline_str = t
-                .deadline
-                .as_ref()
-                .map(|d| d.as_str())
-                .unwrap_or("-");
-            let cat = t.category.as_deref().unwrap_or("none");
-            let created_str = t.created_at.as_str();
-            let completed_str = t
-                .completed_at
-                .as_ref()
-                .map(|c| c.as_str())
-                .unwrap_or("-");
-            task_list.push_str(&format!(
-                "[id:{}] \"{}\" | status:{} | priority:{} | deadline:{} | category:{} | created:{} | completed:{}\n",
-                t.id, t.title, t.status, t.priority, deadline_str, cat, created_str, completed_str
-            ));
-        }
-        if visible_tasks.is_empty() {
-            task_list.push_str("(no tasks)\n");
-        }
+        // --- Build task list sections ---
+        let active_list = build_task_list(active_tasks);
+
+        let (completed_section, scope_note) = match completed_tasks {
+            Some(completed) => {
+                let list = build_task_list(completed);
+                let section = if completed.is_empty() {
+                    String::new()
+                } else {
+                    format!("\nCompleted/archived tasks:\n{list}")
+                };
+                (
+                    section,
+                    "The task list below includes ALL tasks: active (todo/in_progress) AND completed/archived.",
+                )
+            }
+            None => (
+                String::new(),
+                "IMPORTANT: The task list below ONLY includes active tasks (todo and in_progress). Completed and archived tasks are NOT shown. If the user refers to a task that is NOT in the list below — for example mentioning a task they already finished, asking about completed work, or asking time-range questions like \"what did I do this week\" / \"昨天完成了什么\" — add a {\"type\": \"query_completed_tasks\"} action to actions. The system will fetch completed tasks and retry. Do NOT guess task IDs for tasks not in the list.",
+            ),
+        };
+
+        let task_list = format!("Current tasks:\n{active_list}{completed_section}");
+
+        let detail_section = match task_details {
+            Some(details) if !details.is_empty() => format!("\nTask details (fetched on demand):\n{details}\n"),
+            _ => String::new(),
+        };
 
         let memory_section = if memory_context.is_empty() {
             String::new()
@@ -56,9 +91,11 @@ Current datetime: {now_str}
 
 You are a task management assistant. The user speaks to you in natural language. You determine their intent and respond with actions to execute on their behalf.
 
+{scope_note}
+
 IMPORTANT: The task list below is the CURRENT state from the database. Users may have manually changed task statuses since your last conversation. ALWAYS trust the task list below over any previous conversation history. If a task shows status "todo" in the list, treat it as todo regardless of what you said before.
 
-{task_list}{memory_section}
+{task_list}{detail_section}{memory_section}
 
 ## 时间筛选规则（重要）:
 - 任务列表中每个任务都带有 `created`（创建时间）和 `completed`（完成时间，"-"表示未完成）字段，格式为 ISO 8601（如 2026-07-05T10:30:00）。
@@ -66,13 +103,16 @@ IMPORTANT: The task list below is the CURRENT state from the database. Users may
 - **字段选择**：用户问"完成/做完了什么"→ 按 `completed` 筛选；用户问"创建/添加了什么"→ 按 `created` 筛选；模糊表述→优先按 `completed`。
 - **绝对不要**把所有已完成任务都列出来。用户说"本周"就只列本周，说"昨天"就只列昨天。
 - 如果一个 status 为 done 的任务 completed 字段为 "-" 或为空，说明未记录完成时间，不要列入"完成"类时间筛选结果。
+- **如果当前任务清单中没有已完成任务（只有 todo/in_progress），而用户询问的是已完成任务相关的问题，你必须返回 {{"type": "query_completed_tasks"}} action，系统会获取已完成任务后重试。**
 
 ## Supported action types:
 - **create**: Create a new task. Include fields: title, priority (1-10), deadline (ISO 8601, resolve relative times like "下周一" using current date), category ("work"|"life"|"study"|"health"), energy_level ("deep"|"medium"|"shallow"), stakeholder (person name if mentioned), tags (keyword array).
 - **update**: Update an existing task. Match by title keyword → provide task_id + fields to update.
-- **delete**: Delete a task. Match by title keyword → provide task_id.
+- **delete**: Delete a task. Match by title keyword → provide task_id. NOTE: Delete actions are automatically moved to suggested_actions — the UI will show a Yes/No confirmation button to the user before actually deleting. You can return delete in actions normally; the system handles the confirmation flow. In your reply, tell the user you're about to delete the task so they know to confirm.
 - **move**: Change task status. Provide task_id + status ("todo"|"in_progress"|"done"|"archived"). Use "archived" to archive a task (removes it from the kanban board). Use "todo" to un-archive an archived task. When the user says they are STARTING/WORKING ON a task that does not exist yet, first create it, then move it by setting task_id to "__created__" (a special value meaning "the task just created in this batch").
 - **query**: No action needed, just reply with analysis or recommendation.
+- **query_completed_tasks**: Signal that you need to see completed/archived tasks to answer the user's question. When you return this action, set reply to a brief placeholder like "让我查看一下已完成的任务..." — the system will fetch completed tasks and send the request again with the full task list. Do NOT include any other actions when using this — just the query_completed_tasks action.
+- **query_task_detail**: Request full details for specific task(s) — description, progress log, tags, stakeholder, energy level, estimated duration. Provide task_ids (array of IDs from the task list above). Use this when the user asks about a task's details (e.g., "那个任务的描述是什么", "进度记录有哪些", "那个任务之前做到哪了"). The system will fetch the details and retry. You can combine this with query_completed_tasks if needed.
 
 ## Task matching rules:
 - When the user refers to an existing task (e.g., "删掉买牛奶", "把Q2报告标记为完成"), find the best match from the task list by title keywords.

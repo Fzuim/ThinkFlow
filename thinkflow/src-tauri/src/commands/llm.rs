@@ -1,5 +1,5 @@
 use crate::db::sqlite::Database;
-use crate::llm::provider::{ChatMessage, ConnectionTestResult, ModelInfo};
+use crate::llm::provider::{ChatCompletionRequest, ChatMessage, ConnectionTestResult, ModelInfo};
 use crate::models::LlmConfig;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
@@ -436,6 +436,288 @@ pub struct TaskAssistantResult {
     pub suggested_actions: Vec<TaskAssistantAction>,
 }
 
+// ---------------------------------------------------------------------------
+// Shared helpers for task_assistant / task_assistant_stream
+// ---------------------------------------------------------------------------
+
+/// Parse the LLM raw response into a JSON value, handling markdown-wrapped JSON.
+fn parse_llm_json(raw: &str) -> serde_json::Value {
+    if let Ok(v) = serde_json::from_str(raw) {
+        return v;
+    }
+    // Try extracting from markdown code block
+    if raw.contains("```") {
+        if let Some(json_match) = raw.split("```").nth(1) {
+            let cleaned = json_match.trim_start_matches("json").trim();
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(cleaned) {
+                return v;
+            }
+        }
+    }
+    // Try finding JSON object in response
+    if let Some(start) = raw.find('{') {
+        if let Some(end) = raw.rfind('}') {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..=end]) {
+                return v;
+            }
+        }
+    }
+    // Fallback: treat raw text as the reply.
+    // Trim whitespace — if the LLM returned only spaces/newlines (which happens
+    // with some models when thinking is enabled or content is filtered), using
+    // the raw text as-is would stream a wall of spaces to the frontend.
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        serde_json::json!({"reply": "", "actions": [], "suggested_actions": []})
+    } else {
+        serde_json::json!({"reply": trimmed, "actions": [], "suggested_actions": []})
+    }
+}
+
+/// Parse a JSON array of actions into typed structs.
+fn parse_task_actions(arr_val: Option<&serde_json::Value>) -> Vec<TaskAssistantAction> {
+    arr_val
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| {
+                    let action_type = a["type"].as_str()?.to_string();
+                    Some(TaskAssistantAction {
+                        action_type,
+                        task_id: a["task_id"].as_str().map(String::from),
+                        task: a.get("task").cloned(),
+                        updates: a.get("updates").cloned(),
+                        status: a["status"].as_str().map(String::from),
+                        content: a["content"].as_str().map(String::from),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Extract the reply text from the parsed LLM JSON, with fallbacks for empty or
+/// whitespace-only replies. If the reply is blank but actions exist, returns a
+/// brief "done" message; if there are no actions either, returns an apology so
+/// the user is never left staring at a blank bubble.
+fn extract_reply_with_fallback(parsed: &serde_json::Value) -> String {
+    let raw_reply = parsed["reply"].as_str().unwrap_or("");
+    let trimmed = raw_reply.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    // Reply is empty — check if there are actions to execute
+    let has_actions = parsed["actions"]
+        .as_array()
+        .map(|arr| !arr.is_empty())
+        .unwrap_or(false);
+    let has_suggested = parsed["suggested_actions"]
+        .as_array()
+        .map(|arr| !arr.is_empty())
+        .unwrap_or(false);
+    if has_actions || has_suggested {
+        "已为你处理。".to_string()
+    } else {
+        "抱歉，我暂时无法处理这个请求，请换个方式描述试试。".to_string()
+    }
+}
+
+/// Check whether the LLM response contains a `query_completed_tasks` action,
+/// signalling that a second-stage lookup with completed/archived tasks is needed.
+fn needs_completed_lookup(parsed: &serde_json::Value) -> bool {
+    parsed["actions"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .any(|a| a["type"].as_str() == Some("query_completed_tasks"))
+        })
+        .unwrap_or(false)
+}
+
+/// Extract task_ids from `query_task_detail` actions in the LLM response.
+/// Supports both `task_ids: ["id1","id2"]` (array) and `task_id: "id1"` (single).
+fn extract_query_task_detail_ids(parsed: &serde_json::Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Some(arr) = parsed["actions"].as_array() {
+        for a in arr {
+            if a["type"].as_str() == Some("query_task_detail") {
+                if let Some(ids_arr) = a["task_ids"].as_array() {
+                    for id in ids_arr {
+                        if let Some(s) = id.as_str() {
+                            ids.push(s.to_string());
+                        }
+                    }
+                } else if let Some(id) = a["task_id"].as_str() {
+                    ids.push(id.to_string());
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// Format task details (description, progress log, tags, etc.) as text for prompt injection.
+fn format_task_details(tasks: &[crate::models::Task]) -> String {
+    let mut buf = String::new();
+    for t in tasks {
+        buf.push_str(&format!("[id:{}] \"{}\" (status:{})\n", t.id, t.title, t.status));
+        if !t.description.is_empty() {
+            buf.push_str(&format!("  description: {}\n", t.description));
+        }
+        if !t.progress_log.is_empty() {
+            buf.push_str("  progress log:\n");
+            for p in &t.progress_log {
+                buf.push_str(&format!("    [{}] {}\n", p.recorded_at, p.content));
+            }
+        }
+        let tags = if t.tags.is_empty() { "none".to_string() } else { t.tags.join(", ") };
+        buf.push_str(&format!("  tags: {}", tags));
+        if let Some(ref s) = t.stakeholder {
+            buf.push_str(&format!(" | stakeholder: {}", s));
+        }
+        if let Some(ref e) = t.energy_level {
+            buf.push_str(&format!(" | energy: {}", e));
+        }
+        if let Some(d) = t.estimated_duration {
+            buf.push_str(&format!(" | est: {}min", d));
+        }
+        buf.push('\n');
+    }
+    buf
+}
+
+/// Move `delete` actions from `actions` to `suggested_actions` so the UI
+/// shows a Yes/No confirmation button before actually deleting.
+fn move_delete_to_suggested(parsed: &mut serde_json::Value) {
+    let mut delete_actions: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(actions) = parsed["actions"].as_array_mut() {
+        actions.retain(|a| {
+            if a["type"].as_str() == Some("delete") {
+                delete_actions.push(a.clone());
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    if !delete_actions.is_empty() {
+        if parsed["suggested_actions"].is_null() {
+            parsed["suggested_actions"] = serde_json::json!([]);
+        }
+        if let Some(suggested) = parsed["suggested_actions"].as_array_mut() {
+            suggested.extend(delete_actions);
+        }
+    }
+}
+
+/// Fetch active tasks (todo + in_progress) from the database.
+fn get_active_tasks(db: &Database) -> Result<Vec<crate::models::Task>, String> {
+    let mut tasks = db.get_tasks_by_status("todo").map_err(|e| e.to_string())?;
+    tasks.extend(db.get_tasks_by_status("in_progress").map_err(|e| e.to_string())?);
+    Ok(tasks)
+}
+
+/// Fetch completed tasks (done + archived) from the database.
+fn get_completed_tasks(db: &Database) -> Result<Vec<crate::models::Task>, String> {
+    let mut tasks = db.get_tasks_by_status("done").map_err(|e| e.to_string())?;
+    tasks.extend(db.get_tasks_by_status("archived").map_err(|e| e.to_string())?);
+    Ok(tasks)
+}
+
+/// Apply user-configured model/temperature/max_tokens overrides to a request.
+fn apply_model_config(
+    mut request: ChatCompletionRequest,
+    config: &LlmConfig,
+) -> ChatCompletionRequest {
+    request.model = config.model.clone();
+    if let Some(temp) = config.extra_params.get("temperature").and_then(|v| v.as_f64()) {
+        request.temperature = Some(temp);
+    }
+    if let Some(max_tok) = config.extra_params.get("max_tokens").and_then(|v| v.as_i64()) {
+        request.max_tokens = Some(max_tok as i32);
+    }
+    request
+}
+
+/// Execute the two-stage LLM call and return the final parsed JSON.
+///
+/// Stage 1: inject only active (todo + in_progress) tasks.
+/// Stage 2 (if the LLM requests it): also inject completed/archived tasks
+///         and/or task details (description, progress log, etc.).
+async fn do_task_assistant_llm(
+    db: &Database,
+    config: &LlmConfig,
+    message: &str,
+    memory_context: &str,
+    chat_history: &[ChatMessage],
+) -> Result<serde_json::Value, String> {
+    let active_tasks = get_active_tasks(db)?;
+    let provider = crate::llm::provider::get_provider(&config.provider);
+
+    // --- Stage 1: active tasks only ---
+    let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
+        message,
+        &active_tasks,
+        None,
+        None,
+        memory_context,
+        chat_history,
+    );
+    let request = apply_model_config(request, config);
+    let response = provider
+        .chat(&config.api_key, &config.base_url, request)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut parsed = parse_llm_json(&response.content);
+
+    // --- Stage 2: if LLM needs more info, retry with supplemented data ---
+    let needs_completed = needs_completed_lookup(&parsed);
+    let detail_ids = extract_query_task_detail_ids(&parsed);
+
+    if needs_completed || !detail_ids.is_empty() {
+        // Fetch completed tasks if requested
+        let completed_tasks: Option<Vec<crate::models::Task>> = if needs_completed {
+            Some(get_completed_tasks(db)?)
+        } else {
+            None
+        };
+
+        // Fetch task details if requested
+        let task_details_text: Option<String> = if !detail_ids.is_empty() {
+            let all_tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
+            let found: Vec<crate::models::Task> = all_tasks
+                .into_iter()
+                .filter(|t| detail_ids.contains(&t.id))
+                .collect();
+            Some(format_task_details(&found))
+        } else {
+            None
+        };
+
+        let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
+            message,
+            &active_tasks,
+            completed_tasks.as_ref().map(|v| v.as_slice()),
+            task_details_text.as_deref(),
+            memory_context,
+            chat_history,
+        );
+        let request = apply_model_config(request, config);
+        let response = provider
+            .chat(&config.api_key, &config.base_url, request)
+            .await
+            .map_err(|e| e.to_string())?;
+        parsed = parse_llm_json(&response.content);
+    }
+
+    // Move delete actions to suggested_actions so the UI shows a confirmation button
+    move_delete_to_suggested(&mut parsed);
+
+    Ok(parsed)
+}
+
 #[tauri::command]
 pub async fn task_assistant(
     db: State<'_, Database>,
@@ -447,9 +729,6 @@ pub async fn task_assistant(
     if config.api_key.is_empty() && config.provider != "compatible" {
         return Err("API key is not configured.".into());
     }
-
-    // Get tasks and build compact summary
-    let tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
 
     // Get memory context
     let memory_context = match db.get_recent_memories(20) {
@@ -470,104 +749,13 @@ pub async fn task_assistant(
         serde_json::from_str(&history).unwrap_or_default()
     };
 
-    let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
-        &message,
-        &tasks,
-        &memory_context,
-        &chat_history,
-    );
+    // Two-stage LLM call: stage 1 with active tasks, stage 2 (if needed) with completed tasks
+    let parsed = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await?;
 
-    let mut request_with_model = request;
-    request_with_model.model = config.model.clone();
+    let reply = extract_reply_with_fallback(&parsed);
 
-    if let Some(temp) = config.extra_params.get("temperature").and_then(|v| v.as_f64()) {
-        request_with_model.temperature = Some(temp);
-    }
-    if let Some(max_tok) = config.extra_params.get("max_tokens").and_then(|v| v.as_i64()) {
-        request_with_model.max_tokens = Some(max_tok as i32);
-    }
-
-    let provider = crate::llm::provider::get_provider(&config.provider);
-    let response = provider
-        .chat(&config.api_key, &config.base_url, request_with_model)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Parse JSON response (with fallback for markdown-wrapped JSON)
-    let raw = &response.content;
-    let parsed: serde_json::Value = {
-        if let Ok(v) = serde_json::from_str(raw) {
-            v
-        } else if let Some(caps) = raw.matches("```").collect::<Vec<_>>().first() {
-            // Try extracting from markdown code block
-            if let Some(json_match) = raw.split("```").nth(1) {
-                let cleaned = json_match.trim_start_matches("json").trim();
-                serde_json::from_str(cleaned).unwrap_or_else(|_| {
-                    serde_json::from_str("{}").unwrap()
-                })
-            } else {
-                serde_json::from_str("{}").unwrap()
-            }
-        } else {
-            // Try finding JSON object in response
-            if let Some(start) = raw.find('{') {
-                if let Some(end) = raw.rfind('}') {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..=end]) {
-                        v
-                    } else {
-                        return Err("Could not parse AI response.".into());
-                    }
-                } else {
-                    return Err("Could not parse AI response.".into());
-                }
-            } else {
-                return Err("Could not parse AI response.".into());
-            }
-        }
-    };
-
-    let reply = parsed["reply"]
-        .as_str()
-        .unwrap_or("Done.")
-        .to_string();
-
-    let actions: Vec<TaskAssistantAction> = parsed["actions"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|a| {
-                    let action_type = a["type"].as_str()?.to_string();
-                    Some(TaskAssistantAction {
-                        action_type,
-                        task_id: a["task_id"].as_str().map(String::from),
-                        task: a.get("task").cloned(),
-                        updates: a.get("updates").cloned(),
-                        status: a["status"].as_str().map(String::from),
-                        content: a["content"].as_str().map(String::from),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let suggested_actions: Vec<TaskAssistantAction> = parsed["suggested_actions"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|a| {
-                    let action_type = a["type"].as_str()?.to_string();
-                    Some(TaskAssistantAction {
-                        action_type,
-                        task_id: a["task_id"].as_str().map(String::from),
-                        task: a.get("task").cloned(),
-                        updates: a.get("updates").cloned(),
-                        status: a["status"].as_str().map(String::from),
-                        content: a["content"].as_str().map(String::from),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let actions = parse_task_actions(parsed.get("actions"));
+    let suggested_actions = parse_task_actions(parsed.get("suggested_actions"));
 
     Ok(TaskAssistantResult { reply, actions, suggested_actions })
 }
@@ -600,8 +788,6 @@ pub async fn task_assistant_stream(
     message: String,
     history: String,
 ) -> Result<(), String> {
-    use tokio::sync::mpsc;
-
     let config = get_llm_config_internal(&db)?;
 
     if config.api_key.is_empty() && config.provider != "compatible" {
@@ -610,9 +796,6 @@ pub async fn task_assistant_stream(
         });
         return Err("API key is not configured.".into());
     }
-
-    // Get tasks and build compact summary
-    let tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
 
     // Get memory context
     let memory_context = match db.get_recent_memories(20) {
@@ -633,121 +816,17 @@ pub async fn task_assistant_stream(
         serde_json::from_str(&history).unwrap_or_default()
     };
 
-    let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
-        &message,
-        &tasks,
-        &memory_context,
-        &chat_history,
-    );
-
-    let mut request_with_model = request;
-    request_with_model.model = config.model.clone();
-
-    if let Some(temp) = config.extra_params.get("temperature").and_then(|v| v.as_f64()) {
-        request_with_model.temperature = Some(temp);
-    }
-    if let Some(max_tok) = config.extra_params.get("max_tokens").and_then(|v| v.as_i64()) {
-        request_with_model.max_tokens = Some(max_tok as i32);
-    }
-
-    // Create channel for streaming
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-
-    // Consume the channel in background (keeps it alive for the provider)
-    // We don't forward raw SSE tokens to the frontend - they contain raw JSON
-    let _consumer = tokio::spawn(async move {
-        while let Some(_) = rx.recv().await { /* discard */ }
-    });
-
-    // Call the streaming provider
-    let provider = crate::llm::provider::get_provider(&config.provider);
-    let result = provider
-        .chat_stream(&config.api_key, &config.base_url, request_with_model, tx.clone())
-        .await;
-
-    // Drop our sender so the consumer terminates
-    drop(tx);
-    let _ = _consumer.await;
+    // Two-stage LLM call (stage 1: active tasks; stage 2 if needed: + completed tasks)
+    let result = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await;
 
     match result {
-        Ok(response) => {
-            let raw = &response.content;
+        Ok(parsed) => {
+            let reply = extract_reply_with_fallback(&parsed);
 
-            // Parse JSON response (with fallback for markdown-wrapped JSON)
-            let parsed: serde_json::Value = {
-                if let Ok(v) = serde_json::from_str(raw) {
-                    v
-                } else {
-                    // Try extracting from markdown code block
-                    if let Some(json_match) = raw.split("```").nth(1) {
-                        let cleaned = json_match.trim_start_matches("json").trim();
-                        serde_json::from_str(cleaned).unwrap_or_else(|_| {
-                            serde_json::from_str("{}").unwrap()
-                        })
-                    } else {
-                        // Try finding JSON object in response
-                        if let Some(start) = raw.find('{') {
-                            if let Some(end) = raw.rfind('}') {
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw[start..=end]) {
-                                    v
-                                } else {
-                                    serde_json::json!({"reply": raw, "actions": [], "suggested_actions": []})
-                                }
-                            } else {
-                                serde_json::json!({"reply": raw, "actions": [], "suggested_actions": []})
-                            }
-                        } else {
-                            serde_json::json!({"reply": raw, "actions": [], "suggested_actions": []})
-                        }
-                    }
-                }
-            };
-
-            let reply = parsed["reply"]
-                .as_str()
-                .unwrap_or(raw)
-                .to_string();
-
-            let actions: Vec<TaskAssistantAction> = parsed["actions"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|a| {
-                            let action_type = a["type"].as_str()?.to_string();
-                            Some(TaskAssistantAction {
-                                action_type,
-                                task_id: a["task_id"].as_str().map(String::from),
-                                task: a.get("task").cloned(),
-                                updates: a.get("updates").cloned(),
-                                status: a["status"].as_str().map(String::from),
-                        content: a["content"].as_str().map(String::from),
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let suggested_actions: Vec<TaskAssistantAction> = parsed["suggested_actions"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|a| {
-                            let action_type = a["type"].as_str()?.to_string();
-                            Some(TaskAssistantAction {
-                                action_type,
-                                task_id: a["task_id"].as_str().map(String::from),
-                                task: a.get("task").cloned(),
-                                updates: a.get("updates").cloned(),
-                                status: a["status"].as_str().map(String::from),
-                        content: a["content"].as_str().map(String::from),
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let actions = parse_task_actions(parsed.get("actions"));
+            let suggested_actions = parse_task_actions(parsed.get("suggested_actions"));
 
             // Stream reply text character by character for typewriter effect
-            // (don't forward raw SSE tokens - they contain unparsed JSON)
             for ch in reply.chars() {
                 let _ = app_handle.emit(
                     "task-assistant:chunk",
