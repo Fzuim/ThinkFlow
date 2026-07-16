@@ -5,6 +5,8 @@ export type EnergyLevel = "deep" | "medium" | "shallow";
 export type TaskCategory = "work" | "life" | "study" | "health";
 export type Urgency = "urgent" | "normal" | "low";
 export type Importance = "important" | "normal" | "low";
+export type TaskKind = "task" | "milestone";
+export type ScheduleLevel = "stage" | "month" | "week" | "day";
 
 export interface Task {
   id: string;
@@ -23,6 +25,14 @@ export interface Task {
   dependencies: string[];
   source_text: string | null;
   progress_log: { content: string; recorded_at: string }[];
+  goal_id: string | null;
+  parent_id: string | null;
+  kind: TaskKind;
+  start_at: string | null;
+  planned_end_at: string | null;
+  weight: number;
+  sort_order: number;
+  schedule_level: ScheduleLevel | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -60,6 +70,7 @@ interface TaskStore {
   getFilteredTasks: () => Task[];
   getTaskStats: () => TaskStats;
   getTaskById: (id: string) => Task | undefined;
+  getChildTasks: (parentId: string) => Task[];
 
   selectTask: (id: string | null) => void;
   setFilters: (filters: Partial<TaskFilters>) => void;
@@ -121,6 +132,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         stakeholder: task.stakeholder,
         dependencies: task.dependencies,
         source_text: task.source_text,
+        goal_id: task.goal_id,
+        parent_id: task.parent_id,
+        kind: task.kind,
+        start_at: task.start_at,
+        planned_end_at: task.planned_end_at,
+        weight: task.weight,
+        sort_order: task.sort_order,
+        schedule_level: task.schedule_level,
       },
     });
     // Replace with backend version (has correct timestamps)
@@ -239,6 +258,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   getTaskById: (id) => get().tasks.find((t) => t.id === id),
+  getChildTasks: (parentId) => get().tasks
+    .filter((t) => t.parent_id === parentId)
+    .sort((a, b) => a.sort_order - b.sort_order),
 
   selectTask: (id) => set({ selectedTaskId: id }),
 

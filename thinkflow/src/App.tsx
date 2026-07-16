@@ -10,6 +10,8 @@ import DailyBrief from "@/components/briefing/DailyBrief";
 import SettingsView from "@/components/settings/SettingsView";
 import MemoryView from "@/components/memory/MemoryView";
 import FableView from "@/components/fable/FableView";
+import GoalListView from "@/components/goals/GoalListView";
+import GoalDetailView from "@/components/goals/GoalDetailView";
 import { useHotkeyEvents, type HotkeyEventPayload } from "@/hooks/useTauriEvents";
 import { useTaskStore } from "@/stores/taskStore";
 
@@ -53,6 +55,8 @@ export default function App() {
         <Route element={<MainLayout />}>
           <Route path="/" element={<TaskBoard />} />
           <Route path="/capture" element={<TaskAssistant />} />
+          <Route path="/goals" element={<GoalListView />} />
+          <Route path="/goals/:goalId" element={<GoalDetailView />} />
           <Route path="/focus" element={<FocusView />} />
           <Route path="/briefing" element={<DailyBrief />} />
           <Route path="/fable" element={<FableView />} />
