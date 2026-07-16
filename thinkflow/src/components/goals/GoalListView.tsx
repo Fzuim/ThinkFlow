@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Button, Icon, Modal, Progress, Tag } from "animal-island-ui";
-import { CalendarDays, Flag, Plus, Sparkles, Trash2 } from "lucide-react";
+import item001 from "animal-island-ui/items/item-001.png";
+import { CalendarDays, Flag, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
 import { useTaskStore } from "@/stores/taskStore";
@@ -88,7 +89,13 @@ export default function GoalListView() {
             <p className="text-sm mt-1" style={{ color: "#9f927d" }}>{t("goals.subtitle")}</p>
           </div>
           <div className="flex gap-2">
-            <Button type="dashed" icon={<Sparkles size={16} />} onClick={() => navigate("/capture?mode=goal")}>{t("goals.aiPlan")}</Button>
+            <Button
+              type="dashed"
+              icon={<img src={item001} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />}
+              onClick={() => navigate("/capture?mode=goal")}
+            >
+              {t("goals.aiPlan")}
+            </Button>
             <Button type="primary" icon={<Plus size={16} />} onClick={() => setOpen(true)}>{t("goals.create")}</Button>
           </div>
         </div>
