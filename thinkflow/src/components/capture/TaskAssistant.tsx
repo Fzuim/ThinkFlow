@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Icon } from "animal-island-ui";
+import { Button, Icon, Tooltip } from "animal-island-ui";
 import { useChatStore, type ChatMessage, type ActionResult } from "@/stores/chatStore";
 import {
   ArrowLeft,
@@ -579,23 +579,25 @@ export default function TaskAssistant() {
           >
             {/* Rounds chip + popover */}
             <div style={{ position: "relative" }}>
-              <div
-                onClick={() => setShowSlider(!showSlider)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 9px",
-                  borderRadius: 16,
-                  cursor: "pointer",
-                  background: "#f0e8d8",
-                  border: "1.5px solid #c4b89e",
-                  userSelect: "none",
-                }}
-              >
-                <Icon name="icon-chat" size={13} style={{ color: "#725d42" }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#725d42" }}>{roundCount}</span>
-              </div>
+              <Tooltip title={t("taskAssistant.chatRoundsHint")} placement="top-start">
+                <div
+                  onClick={() => setShowSlider(!showSlider)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "3px 9px",
+                    borderRadius: 16,
+                    cursor: "pointer",
+                    background: "#f0e8d8",
+                    border: "1.5px solid #c4b89e",
+                    userSelect: "none",
+                  }}
+                >
+                  <Icon name="icon-chat" size={13} style={{ color: "#725d42" }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#725d42" }}>{roundCount}</span>
+                </div>
+              </Tooltip>
               {showSlider && (
                 <div
                   style={{

@@ -139,6 +139,7 @@
     "planningTitle": "AI Goal Planner",
     "goalTitle": "Goal AI Assistant",
     "placeholder": "Tell me what you need… (⌘/Ctrl+Enter to send)",
+    "chatRoundsHint": "Controls how many previous conversation rounds are injected into each AI request. More rounds provide richer context but consume more tokens.",
     "send": "Send",
     "thinking": "Thinking...",
     "thoughtProcess": "Thought Process",
