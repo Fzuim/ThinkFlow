@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Modal, Progress } from "animal-island-ui";
-import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { Button, Checkbox, Modal, Progress } from "animal-island-ui";
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Diamond, Plus, Sparkles, Target, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
 import { useTaskStore, type Task, type TaskKind } from "@/stores/taskStore";
@@ -276,13 +276,15 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onOpenMenu
       >
         <button onClick={() => setExpanded((value) => !value)} className="w-5" style={{ color: "#9f927d" }}>{isParent ? (expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />) : null}</button>
         {task.kind === "milestone" ? <Diamond size={15} style={{ color: "#889df0" }} /> : (
-          <button
-            aria-label={task.status === "done" ? t("goals.markTodo") : t("goals.markDone")}
-            title={task.status === "done" ? t("goals.markTodo") : t("goals.markDone")}
-            onClick={() => onMove(task.id, task.status === "done" ? "todo" : "done")}
-          >
-            {task.status === "done" ? <CheckCircle2 size={16} style={{ color: "#70b970" }} /> : <Circle size={16} style={{ color: "#b0a38d" }} />}
-          </button>
+          <Checkbox
+            options={[{
+              label: <span className="sr-only">{task.status === "done" ? t("goals.markTodo") : t("goals.markDone")}</span>,
+              value: task.id,
+            }]}
+            value={task.status === "done" ? [task.id] : []}
+            size="small"
+            onChange={(values) => void onMove(task.id, values.includes(task.id) ? "done" : "todo")}
+          />
         )}
         <button
           className="flex-1 text-left text-sm font-medium"
