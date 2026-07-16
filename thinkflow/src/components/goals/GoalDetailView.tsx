@@ -158,7 +158,18 @@ export default function GoalDetailView() {
 
       <Modal open={dialog.open} title={dialog.editingId ? t("goals.editNode") : dialog.parentId ? t("goals.addChild") : t("goals.addStage")} onClose={closeDialog} onOk={saveTask} typewriter={false} width={500}>
         <div className="space-y-4" style={{ width: "100%" }}>
-          <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.taskTitle")}</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
+          <label className="block w-full">
+            <span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.taskTitle")}</span>
+            <textarea
+              autoFocus
+              rows={2}
+              value={title}
+              onChange={(event) => setTitle(event.target.value.replace(/[\r\n]+/g, " "))}
+              onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }}
+              style={inputStyle}
+              {...focusHandlers}
+            />
+          </label>
           <div className="w-full"><span className="text-xs font-semibold block mb-2" style={{ color: "#9f927d" }}>{t("goals.form.kind")}</span><div className="grid grid-cols-2 gap-2"><Button type={kind === "task" ? "primary" : "dashed"} onClick={() => setKind("task")}>{t("goals.kind.task")}</Button><Button type={kind === "milestone" ? "primary" : "dashed"} onClick={() => setKind("milestone")}>{t("goals.kind.milestone")}</Button></div></div>
           <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.plannedEnd")}</span><input type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
         </div>
