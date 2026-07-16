@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Divider, Icon, Time, type IconName } from "animal-island-ui";
 import item464 from "animal-island-ui/items/item-464.png";
+import item468 from "animal-island-ui/items/item-468.png";
 
 export default function MainLayout() {
   const { t } = useTranslation();
@@ -13,7 +14,7 @@ export default function MainLayout() {
     { to: "/focus", iconName: "icon-miles", key: "nav.focusMode" },
     { to: "/briefing", iconName: "icon-design", key: "nav.dailyBrief" },
     { to: "/fable", itemSrc: item464, key: "nav.fable" },
-    { to: "/memory", iconName: "icon-shopping", key: "nav.memory" },
+    { to: "/memory", itemSrc: item468, key: "nav.memory" },
   ];
 
   return (
