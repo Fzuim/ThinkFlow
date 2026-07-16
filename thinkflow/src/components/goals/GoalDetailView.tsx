@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Input, Modal } from "animal-island-ui";
+import { Button, Modal } from "animal-island-ui";
 import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
@@ -101,15 +101,43 @@ export default function GoalDetailView() {
       </div>
 
       <Modal open={dialog.open} title={dialog.parentId ? t("goals.addChild") : t("goals.addStage")} onClose={() => setDialog({ open: false, parentId: null })} onOk={createTask} typewriter={false} width={500}>
-        <div className="space-y-4">
-          <label className="block"><span className="text-xs font-semibold block mb-1" style={{ color: "#8a7b66" }}>{t("goals.form.taskTitle")}</span><Input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-          <div><span className="text-xs font-semibold block mb-2" style={{ color: "#8a7b66" }}>{t("goals.form.kind")}</span><div className="flex gap-2"><Button type={kind === "task" ? "primary" : "dashed"} onClick={() => setKind("task")}>{t("goals.kind.task")}</Button><Button type={kind === "milestone" ? "primary" : "dashed"} onClick={() => setKind("milestone")}>{t("goals.kind.milestone")}</Button></div></div>
-          <label className="block"><span className="text-xs font-semibold block mb-1" style={{ color: "#8a7b66" }}>{t("goals.form.plannedEnd")}</span><Input type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} /></label>
+        <div className="space-y-4" style={{ width: "100%" }}>
+          <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.taskTitle")}</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
+          <div className="w-full"><span className="text-xs font-semibold block mb-2" style={{ color: "#9f927d" }}>{t("goals.form.kind")}</span><div className="grid grid-cols-2 gap-2"><Button type={kind === "task" ? "primary" : "dashed"} onClick={() => setKind("task")}>{t("goals.kind.task")}</Button><Button type={kind === "milestone" ? "primary" : "dashed"} onClick={() => setKind("milestone")}>{t("goals.kind.milestone")}</Button></div></div>
+          <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.plannedEnd")}</span><input type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
         </div>
       </Modal>
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  resize: "none",
+  background: "rgb(247, 243, 223)",
+  border: "2.5px solid #c4b89e",
+  borderRadius: 18,
+  padding: "10px 16px",
+  fontSize: 14,
+  fontWeight: 500,
+  color: "#725d42",
+  fontFamily: "inherit",
+  outline: "none",
+  boxShadow: "0 3px 0 0 #d4c9b4",
+  transition: "border-color 0.25s, box-shadow 0.25s",
+};
+
+const focusHandlers = {
+  onFocus: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    event.currentTarget.style.borderColor = "#ffcc00";
+    event.currentTarget.style.boxShadow = "0 3px 0 0 #e0b800, 0 0 0 3px rgba(255,204,0,0.15)";
+  },
+  onBlur: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    event.currentTarget.style.borderColor = "#c4b89e";
+    event.currentTarget.style.boxShadow = "0 3px 0 0 #d4c9b4";
+  },
+};
 
 function TaskTreeNode({ task, allTasks, depth, onAdd, onMove }: {
   task: Task; allTasks: Task[]; depth: number;
