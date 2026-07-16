@@ -98,7 +98,7 @@
       "plannedEnd": "Planned completion"
     },
     "kind": { "task": "Action task", "milestone": "Stage / milestone" },
-    "status": { "draft": "Draft", "active": "Active", "paused": "Paused", "completed": "Completed", "abandoned": "Abandoned" }
+    "status": { "draft": "Draft", "active": "Active", "paused": "Paused", "completed": "Completed", "abandoned": "Abandoned", "notStarted": "Not Started", "inProgress": "In Progress" }
   },
   "quickCapture": {
     "title": "Quick Capture",

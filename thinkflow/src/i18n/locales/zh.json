@@ -98,7 +98,7 @@
       "plannedEnd": "计划完成日期"
     },
     "kind": { "task": "执行任务", "milestone": "阶段/里程碑" },
-    "status": { "draft": "草稿", "active": "进行中", "paused": "已暂停", "completed": "已完成", "abandoned": "已放弃" }
+    "status": { "draft": "草稿", "active": "进行中", "paused": "已暂停", "completed": "已完成", "abandoned": "已放弃", "notStarted": "未开始", "inProgress": "进行中" }
   },
   "quickCapture": {
     "title": "快速小记",

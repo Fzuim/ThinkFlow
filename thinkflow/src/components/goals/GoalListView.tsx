@@ -98,6 +98,11 @@ export default function GoalListView() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {activeGoals.map((goal) => {
               const progress = calculateGoalProgress(goal.id, tasks);
+              const progressStatus = progress === 0
+                ? "notStarted"
+                : progress >= 100
+                  ? "completed"
+                  : "inProgress";
               const goalTasks = tasks.filter((task) => task.goal_id === goal.id);
               const done = goalTasks.filter((task) => task.status === "done").length;
               return (
@@ -117,7 +122,7 @@ export default function GoalListView() {
                       <h3 className="text-lg font-semibold" style={{ color: "#725d42" }}>{goal.title}</h3>
                       <p className="text-sm mt-1 line-clamp-2" style={{ color: "#9f927d" }}>{goal.description || t("goals.noDescription")}</p>
                     </div>
-                    <span className="shrink-0 whitespace-nowrap text-xs font-semibold px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{t(`goals.status.${goal.status}`)}</span>
+                    <span className="shrink-0 whitespace-nowrap text-xs font-semibold px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{t(`goals.status.${progressStatus}`)}</span>
                   </div>
                   <div className="mt-5">
                     <div className="flex justify-between text-xs mb-2" style={{ color: "#8a7b66" }}>
