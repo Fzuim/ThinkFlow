@@ -3,6 +3,7 @@ import { useFableStore } from "@/stores/fableStore";
 import { useTranslation } from "react-i18next";
 import { Card, Button, Icon, Input } from "animal-island-ui";
 import item014 from "animal-island-ui/items/item-014.png";
+import item464 from "animal-island-ui/items/item-464.png";
 import { Loader2, AlertCircle, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -45,7 +46,7 @@ export default function FableView() {
               gap: 8,
             }}
           >
-            <Icon name="icon-map" size={22} style={{ color: "#19c8b9" }} />
+            <Icon src={item464} size={22} />
             {t("fable.title")}
           </div>
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 p-6">
@@ -88,7 +89,7 @@ export default function FableView() {
               gap: 8,
             }}
           >
-            <Icon name="icon-map" size={22} style={{ color: "#19c8b9" }} />
+            <Icon src={item464} size={22} />
             {t("fable.title")}
           </div>
           <div className="flex-1 min-h-0 flex flex-col gap-4 p-6 pt-2">
@@ -255,7 +256,7 @@ export default function FableView() {
               gap: 8,
             }}
           >
-            <Icon name="icon-map" size={22} style={{ color: "#19c8b9" }} />
+            <Icon src={item464} size={22} />
             {t("fable.title")}
           </div>
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 p-6">
@@ -292,7 +293,7 @@ export default function FableView() {
             gap: 8,
           }}
         >
-          <Icon name="icon-map" size={22} style={{ color: "#19c8b9" }} />
+          <Icon src={item464} size={22} />
           {t("fable.title")}
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center gap-6 p-6">
@@ -306,7 +307,7 @@ export default function FableView() {
               justifyContent: "center",
             }}
           >
-            <Icon name="icon-map" size={48} style={{ color: "#19c8b9" }} />
+            <Icon src={item464} size={48} />
           </div>
           <div>
             <h3 className="text-lg font-semibold mb-1" style={{ color: "#725d42" }}>

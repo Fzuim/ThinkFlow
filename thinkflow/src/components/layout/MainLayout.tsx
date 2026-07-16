@@ -1,17 +1,18 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Divider, Icon, Time, type IconName } from "animal-island-ui";
+import item464 from "animal-island-ui/items/item-464.png";
 
 export default function MainLayout() {
   const { t } = useTranslation();
 
-  const navItems: { to: string; iconName: IconName; key: string }[] = [
+  const navItems: { to: string; iconName?: IconName; itemSrc?: string; key: string }[] = [
     { to: "/capture", iconName: "icon-chat", key: "nav.taskAssistant" },
     { to: "/", iconName: "icon-variant", key: "nav.taskBoard" },
     { to: "/goals", iconName: "icon-helicopter", key: "nav.goals" },
     { to: "/focus", iconName: "icon-miles", key: "nav.focusMode" },
     { to: "/briefing", iconName: "icon-design", key: "nav.dailyBrief" },
-    { to: "/fable", iconName: "icon-map", key: "nav.fable" },
+    { to: "/fable", itemSrc: item464, key: "nav.fable" },
     { to: "/memory", iconName: "icon-shopping", key: "nav.memory" },
   ];
 
@@ -37,7 +38,7 @@ export default function MainLayout() {
         </h1>
         <Divider />
         <nav className="flex flex-col gap-0.5 mt-2">
-          {navItems.map(({ to, iconName, key }) => (
+          {navItems.map(({ to, iconName, itemSrc, key }) => (
             <NavLink
               key={to}
               to={to}
@@ -63,7 +64,7 @@ export default function MainLayout() {
                 e.currentTarget.style.background = isActive ? "#B7C6E5" : "transparent";
               }}
             >
-              <Icon name={iconName} size={20} />
+              {itemSrc ? <Icon src={itemSrc} size={20} /> : <Icon name={iconName!} size={20} />}
               {t(key)}
             </NavLink>
           ))}
