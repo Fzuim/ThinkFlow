@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Divider, Icon, type IconName } from "animal-island-ui";
+import { Divider, Icon, Time, type IconName } from "animal-island-ui";
 
 export default function MainLayout() {
   const { t } = useTranslation();
@@ -69,9 +69,12 @@ export default function MainLayout() {
           ))}
         </nav>
         <Divider />
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+          <Time className="shrink-0 scale-[0.55]" />
+        </div>
         <NavLink
           to="/settings"
-          className="flex items-center gap-3 px-3 py-2 text-sm mt-auto transition-all"
+          className="flex items-center gap-3 px-3 py-2 text-sm transition-all"
           style={({ isActive }) => ({
             borderRadius: 12,
             fontWeight: 600,
