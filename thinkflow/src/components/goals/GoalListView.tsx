@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Button, Modal, Progress } from "animal-island-ui";
-import { CalendarDays, Flag, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { Button, Icon, Modal, Progress } from "animal-island-ui";
+import { CalendarDays, Flag, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
 import { useTaskStore } from "@/stores/taskStore";
@@ -76,7 +76,7 @@ export default function GoalListView() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-3">
-              <Target size={25} style={{ color: "#19c8b9" }} />
+              <Icon name="icon-helicopter" size={25} />
               <h2 className="text-2xl font-semibold" style={{ color: "#725d42" }}>{t("goals.title")}</h2>
             </div>
             <p className="text-sm mt-1" style={{ color: "#9f927d" }}>{t("goals.subtitle")}</p>
