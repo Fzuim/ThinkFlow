@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Checkbox, Icon, Modal, Progress } from "animal-island-ui";
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Diamond, Plus, Sparkles, Trash2 } from "lucide-react";
+import item001 from "animal-island-ui/items/item-001.png";
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Diamond, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
 import { useTaskStore, type Task, type TaskKind } from "@/stores/taskStore";
@@ -141,7 +142,7 @@ export default function GoalDetailView() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button type="dashed" icon={<Sparkles size={16} />} onClick={() => navigate(`/capture?mode=goal&goalId=${goal.id}`)}>{t("goals.discuss")}</Button>
+              <Button type="dashed" icon={<Icon src={item001} size={20} />} onClick={() => navigate(`/capture?mode=goal&goalId=${goal.id}`)}>{t("goals.discuss")}</Button>
               <Button type="primary" icon={<Plus size={16} />} onClick={() => openAdd(null, "milestone")}>{t("goals.addStage")}</Button>
             </div>
           </div>
