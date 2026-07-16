@@ -6,6 +6,7 @@ import { Input } from "animal-island-ui";
 import { Select } from "animal-island-ui";
 import { Button } from "animal-island-ui";
 import { Modal, Icon } from "animal-island-ui";
+import item468 from "animal-island-ui/items/item-468.png";
 import {
   Search,
   Plus,
@@ -116,7 +117,7 @@ export default function MemoryView() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Icon name="icon-shopping" size={22} style={{ color: "#19c8b9" }} />
+          <Icon src={item468} size={22} />
           <h2 className="text-2xl font-semibold" style={{ color: "#725d42" }}>{t("memory.title")}</h2>
           <span
             style={{

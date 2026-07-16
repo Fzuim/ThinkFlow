@@ -2,8 +2,8 @@ use tauri::State;
 
 use crate::db::sqlite::Database;
 use crate::models::{
-    is_valid_status_transition, CreateProjectRequest, CreateTaskRequest, Project, SearchTasksRequest,
-    Task, UpdateTaskStatusRequest,
+    is_valid_status_transition, CreateGoalRequest, CreateProjectRequest, CreateTaskRequest, Goal,
+    Project, SearchTasksRequest, Task, UpdateTaskStatusRequest, VALID_GOAL_STATUSES,
 };
 
 // ---------------------------------------------------------------------------
@@ -26,8 +26,18 @@ fn now_utc() -> String {
 
 /// Create a new task from a validated `CreateTaskRequest`.
 #[tauri::command]
-pub fn create_task(db: State<Database>, request: CreateTaskRequest) -> Result<Task, String> {
+pub fn create_task(db: State<Database>, mut request: CreateTaskRequest) -> Result<Task, String> {
     request.validate()?;
+
+    if let Some(goal_id) = request.goal_id.as_ref() {
+        db.get_goal_by_id(goal_id).map_err(|e| e.to_string())?;
+    }
+    if let Some(parent_id) = request.parent_id.as_ref() {
+        let parent = db.get_task_by_id(parent_id).map_err(|e| e.to_string())?;
+        if request.goal_id.is_none() {
+            request.goal_id = parent.goal_id;
+        }
+    }
 
     let id = new_id();
     let now = now_utc();
@@ -83,6 +93,21 @@ pub fn update_task(db: State<Database>, id: String, updates: Task) -> Result<Tas
     }
     if updates.title.trim().is_empty() {
         return Err("Title must not be empty".to_string());
+    }
+    if updates.parent_id.as_deref() == Some(id.as_str()) {
+        return Err("A task cannot be its own parent".to_string());
+    }
+    if let Some(parent_id) = updates.parent_id.as_ref() {
+        db.get_task_by_id(parent_id).map_err(|e| e.to_string())?;
+        if db
+            .would_create_task_cycle(&id, parent_id)
+            .map_err(|e| e.to_string())?
+        {
+            return Err("Task hierarchy cannot contain a cycle".to_string());
+        }
+    }
+    if let Some(goal_id) = updates.goal_id.as_ref() {
+        db.get_goal_by_id(goal_id).map_err(|e| e.to_string())?;
     }
     db.update_task(&id, &updates).map_err(|e| e.to_string())
 }
@@ -155,6 +180,50 @@ pub fn delete_task(db: State<Database>, id: String) -> Result<(), String> {
         return Err("Task ID must not be empty".to_string());
     }
     db.delete_task(&id).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Goal commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn create_goal(db: State<Database>, request: CreateGoalRequest) -> Result<Goal, String> {
+    request.validate()?;
+    let goal = request.into_goal(new_id(), now_utc());
+    db.create_goal(&goal).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_goal(db: State<Database>, id: String) -> Result<Goal, String> {
+    if id.trim().is_empty() {
+        return Err("Goal ID must not be empty".to_string());
+    }
+    db.get_goal_by_id(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_all_goals(db: State<Database>) -> Result<Vec<Goal>, String> {
+    db.get_all_goals().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_goal(db: State<Database>, id: String, mut updates: Goal) -> Result<Goal, String> {
+    if updates.title.trim().is_empty() {
+        return Err("Goal title must not be empty".to_string());
+    }
+    if !VALID_GOAL_STATUSES.contains(&updates.status.as_str()) {
+        return Err(format!("Invalid goal status '{}'", updates.status));
+    }
+    updates.updated_at = now_utc();
+    db.update_goal(&id, &updates).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_goal(db: State<Database>, id: String) -> Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("Goal ID must not be empty".to_string());
+    }
+    db.delete_goal(&id).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

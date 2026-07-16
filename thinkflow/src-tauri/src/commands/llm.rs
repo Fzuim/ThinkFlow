@@ -1,6 +1,7 @@
 use crate::db::sqlite::Database;
 use crate::llm::provider::{ChatCompletionRequest, ChatMessage, ConnectionTestResult, ModelInfo};
 use crate::models::LlmConfig;
+use std::collections::HashSet;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
@@ -233,14 +234,17 @@ pub async fn daily_brief(db: State<'_, Database>) -> Result<DailyBriefResult, St
     }
 
     let tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
+    let goals = db.get_all_goals().map_err(|e| e.to_string())?;
 
-    if tasks.is_empty() {
+    if tasks.is_empty() && goals.is_empty() {
         return Ok(DailyBriefResult {
-            briefing: "No tasks yet. Capture some tasks in Quick Capture to get your daily briefing!".into(),
+            briefing:
+                "No tasks yet. Capture some tasks in Quick Capture to get your daily briefing!\n\n## 目标计划分析\n\n暂无目标计划。"
+                    .into(),
         });
     }
 
-    let mut request = crate::agents::briefing::BriefingAgent::build_prompt(&tasks);
+    let mut request = crate::agents::briefing::BriefingAgent::build_prompt(&tasks, &goals);
     request.model = config.model.clone();
 
     if let Some(temp) = config.extra_params.get("temperature").and_then(|v| v.as_f64()) {
@@ -424,6 +428,7 @@ pub struct TaskAssistantAction {
     pub action_type: String,
     pub task_id: Option<String>,
     pub task: Option<serde_json::Value>,
+    pub goal: Option<serde_json::Value>,
     pub updates: Option<serde_json::Value>,
     pub status: Option<String>,
     pub content: Option<String>,
@@ -488,6 +493,7 @@ fn parse_task_actions(arr_val: Option<&serde_json::Value>) -> Vec<TaskAssistantA
                         action_type,
                         task_id: a["task_id"].as_str().map(String::from),
                         task: a.get("task").cloned(),
+                        goal: a.get("goal").cloned(),
                         updates: a.get("updates").cloned(),
                         status: a["status"].as_str().map(String::from),
                         content: a["content"].as_str().map(String::from),
@@ -643,6 +649,64 @@ fn apply_model_config(
     request
 }
 
+/// Defense-in-depth for goal-scoped conversations. The model only sees the
+/// selected goal, and its returned actions are also constrained before they
+/// leave the backend.
+fn enforce_goal_scope(
+    parsed: &mut serde_json::Value,
+    goal_id: &str,
+    allowed_task_ids: &HashSet<String>,
+) {
+    for key in ["actions", "suggested_actions"] {
+        let Some(actions) = parsed.get_mut(key).and_then(|value| value.as_array_mut()) else {
+            continue;
+        };
+
+        actions.retain_mut(|action| {
+            let Some(action_type) = action.get("type").and_then(|value| value.as_str()) else {
+                return false;
+            };
+
+            match action_type {
+                "create_goal" => false,
+                "create" => {
+                    let Some(task) = action.get_mut("task").and_then(|value| value.as_object_mut()) else {
+                        return false;
+                    };
+                    task.insert("goal_id".into(), serde_json::Value::String(goal_id.into()));
+                    match task.get("parent_id").and_then(|value| value.as_str()) {
+                        Some(parent_id) if parent_id.starts_with("__ref:") => true,
+                        Some(parent_id) => allowed_task_ids.contains(parent_id),
+                        None => true,
+                    }
+                }
+                "update" => {
+                    let Some(task_id) = action.get("task_id").and_then(|value| value.as_str()) else {
+                        return false;
+                    };
+                    if !allowed_task_ids.contains(task_id) {
+                        return false;
+                    }
+                    if let Some(updates) = action.get_mut("updates").and_then(|value| value.as_object_mut()) {
+                        updates.insert("goal_id".into(), serde_json::Value::String(goal_id.into()));
+                        if let Some(parent_id) = updates.get("parent_id").and_then(|value| value.as_str()) {
+                            if !allowed_task_ids.contains(parent_id) {
+                                return false;
+                            }
+                        }
+                    }
+                    true
+                }
+                "delete" | "move" | "record_progress" => action
+                    .get("task_id")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|task_id| allowed_task_ids.contains(task_id)),
+                _ => true,
+            }
+        });
+    }
+}
+
 /// Execute the two-stage LLM call and return the final parsed JSON
 /// along with any reasoning/thinking content produced by the model.
 ///
@@ -655,18 +719,31 @@ async fn do_task_assistant_llm(
     message: &str,
     memory_context: &str,
     chat_history: &[ChatMessage],
+    goal_id: Option<&str>,
 ) -> Result<(serde_json::Value, Option<String>), String> {
-    let active_tasks = get_active_tasks(db)?;
+    let scope_goal = goal_id
+        .map(|id| db.get_goal_by_id(id).map_err(|e| e.to_string()))
+        .transpose()?;
+    let mut active_tasks = get_active_tasks(db)?;
+    if let Some(id) = goal_id {
+        active_tasks.retain(|task| task.goal_id.as_deref() == Some(id));
+    }
+    let goals = match scope_goal.as_ref() {
+        Some(goal) => vec![goal.clone()],
+        None => db.get_all_goals().map_err(|e| e.to_string())?,
+    };
     let provider = crate::llm::provider::get_provider(&config.provider);
 
     // --- Stage 1: active tasks only ---
     let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
         message,
         &active_tasks,
+        &goals,
         None,
         None,
         memory_context,
         chat_history,
+        scope_goal.as_ref(),
     );
     let request = apply_model_config(request, config);
     let response = provider
@@ -683,7 +760,11 @@ async fn do_task_assistant_llm(
     if needs_completed || !detail_ids.is_empty() {
         // Fetch completed tasks if requested
         let completed_tasks: Option<Vec<crate::models::Task>> = if needs_completed {
-            Some(get_completed_tasks(db)?)
+            let mut tasks = get_completed_tasks(db)?;
+            if let Some(id) = goal_id {
+                tasks.retain(|task| task.goal_id.as_deref() == Some(id));
+            }
+            Some(tasks)
         } else {
             None
         };
@@ -693,7 +774,10 @@ async fn do_task_assistant_llm(
             let all_tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
             let found: Vec<crate::models::Task> = all_tasks
                 .into_iter()
-                .filter(|t| detail_ids.contains(&t.id))
+                .filter(|task| {
+                    detail_ids.contains(&task.id)
+                        && goal_id.is_none_or(|id| task.goal_id.as_deref() == Some(id))
+                })
                 .collect();
             Some(format_task_details(&found))
         } else {
@@ -703,10 +787,12 @@ async fn do_task_assistant_llm(
         let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
             message,
             &active_tasks,
+            &goals,
             completed_tasks.as_ref().map(|v| v.as_slice()),
             task_details_text.as_deref(),
             memory_context,
             chat_history,
+            scope_goal.as_ref(),
         );
         let request = apply_model_config(request, config);
         let response = provider
@@ -720,6 +806,17 @@ async fn do_task_assistant_llm(
     // Move delete actions to suggested_actions so the UI shows a confirmation button
     move_delete_to_suggested(&mut parsed);
 
+    if let Some(id) = goal_id {
+        let allowed_task_ids = db
+            .get_all_tasks()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|task| task.goal_id.as_deref() == Some(id))
+            .map(|task| task.id)
+            .collect::<HashSet<_>>();
+        enforce_goal_scope(&mut parsed, id, &allowed_task_ids);
+    }
+
     Ok((parsed, reasoning))
 }
 
@@ -728,6 +825,7 @@ pub async fn task_assistant(
     db: State<'_, Database>,
     message: String,
     history: String,
+    goal_id: Option<String>,
 ) -> Result<TaskAssistantResult, String> {
     let config = get_llm_config_internal(&db)?;
 
@@ -736,7 +834,9 @@ pub async fn task_assistant(
     }
 
     // Get memory context
-    let memory_context = match db.get_recent_memories(20) {
+    let memory_context = if goal_id.is_some() {
+        String::new()
+    } else { match db.get_recent_memories(20) {
         Ok(memories) if !memories.is_empty() => {
             let mut ctx = String::new();
             for m in &memories {
@@ -745,7 +845,7 @@ pub async fn task_assistant(
             ctx
         }
         _ => String::new(),
-    };
+    }};
 
     // Parse conversation history
     let chat_history: Vec<ChatMessage> = if history.is_empty() {
@@ -755,7 +855,14 @@ pub async fn task_assistant(
     };
 
     // Two-stage LLM call: stage 1 with active tasks, stage 2 (if needed) with completed tasks
-    let (parsed, reasoning) = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await?;
+    let (parsed, reasoning) = do_task_assistant_llm(
+        &db,
+        &config,
+        &message,
+        &memory_context,
+        &chat_history,
+        goal_id.as_deref(),
+    ).await?;
 
     let reply = extract_reply_with_fallback(&parsed);
 
@@ -799,6 +906,7 @@ pub async fn task_assistant_stream(
     db: State<'_, Database>,
     message: String,
     history: String,
+    goal_id: Option<String>,
 ) -> Result<(), String> {
     let config = get_llm_config_internal(&db)?;
 
@@ -810,7 +918,9 @@ pub async fn task_assistant_stream(
     }
 
     // Get memory context
-    let memory_context = match db.get_recent_memories(20) {
+    let memory_context = if goal_id.is_some() {
+        String::new()
+    } else { match db.get_recent_memories(20) {
         Ok(memories) if !memories.is_empty() => {
             let mut ctx = String::new();
             for m in &memories {
@@ -819,7 +929,7 @@ pub async fn task_assistant_stream(
             ctx
         }
         _ => String::new(),
-    };
+    }};
 
     // Parse conversation history
     let chat_history: Vec<ChatMessage> = if history.is_empty() {
@@ -829,7 +939,14 @@ pub async fn task_assistant_stream(
     };
 
     // Two-stage LLM call (stage 1: active tasks; stage 2 if needed: + completed tasks)
-    let result = do_task_assistant_llm(&db, &config, &message, &memory_context, &chat_history).await;
+    let result = do_task_assistant_llm(
+        &db,
+        &config,
+        &message,
+        &memory_context,
+        &chat_history,
+        goal_id.as_deref(),
+    ).await;
 
     match result {
         Ok((parsed, reasoning)) => {
@@ -876,4 +993,34 @@ pub async fn task_assistant_stream(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod goal_scope_tests {
+    use super::*;
+
+    #[test]
+    fn goal_scope_binds_creates_and_removes_cross_scope_actions() {
+        let mut parsed = serde_json::json!({
+            "reply": "ok",
+            "actions": [
+                {"type": "create", "task": {"title": "scoped child"}},
+                {"type": "move", "task_id": "outside", "status": "done"},
+                {"type": "update", "task_id": "inside", "updates": {"goal_id": "other", "title": "updated"}}
+            ],
+            "suggested_actions": [
+                {"type": "create_goal", "goal": {"title": "another goal"}},
+                {"type": "create", "task": {"title": "bad parent", "parent_id": "outside"}}
+            ]
+        });
+        let allowed = HashSet::from(["inside".to_string()]);
+
+        enforce_goal_scope(&mut parsed, "goal-1", &allowed);
+
+        let actions = parsed["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0]["task"]["goal_id"], "goal-1");
+        assert_eq!(actions[1]["updates"]["goal_id"], "goal-1");
+        assert!(parsed["suggested_actions"].as_array().unwrap().is_empty());
+    }
 }

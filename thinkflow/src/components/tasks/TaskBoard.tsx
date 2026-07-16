@@ -58,7 +58,6 @@ export default function TaskBoard() {
   useEffect(() => {
     init();
   }, [init]);
-
   const navigate = useNavigate();
 
   const [showFilters, setShowFilters] = useState(false);
@@ -161,7 +160,7 @@ export default function TaskBoard() {
   }, []);
 
   const stats = useMemo(() => getTaskStats(), [tasks, getTaskStats]);
-  const filteredTasks = useMemo(() => getFilteredTasks(), [tasks, filters, getFilteredTasks]);
+  const filteredTasks = getFilteredTasks().filter((task) => task.goal_id === null);
 
   const hasActiveFilters =
     filters.category !== null ||
@@ -187,6 +186,14 @@ export default function TaskBoard() {
       dependencies: [] as string[],
       source_text: null,
       progress_log: [],
+      goal_id: null,
+      parent_id: null,
+      kind: "task" as const,
+      start_at: null,
+      planned_end_at: null,
+      weight: 1,
+      sort_order: 0,
+      schedule_level: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       completed_at: null,

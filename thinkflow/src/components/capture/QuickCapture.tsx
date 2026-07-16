@@ -46,6 +46,14 @@ function executeAction(action: AssistantAction) {
         dependencies: [],
         source_text: null,
         progress_log: [],
+        goal_id: null,
+        parent_id: null,
+        kind: "task",
+        start_at: null,
+        planned_end_at: null,
+        weight: 1,
+        sort_order: 0,
+        schedule_level: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         completed_at: null,
@@ -108,6 +116,7 @@ QuickCapture.Modal = function QuickCaptureModal({ onClose }: QuickCaptureProps) 
       const res = await invoke<TaskAssistantResponse>("task_assistant", {
         message: input.trim(),
         history: "[]",
+        goalId: null,
       });
 
       // Execute actions

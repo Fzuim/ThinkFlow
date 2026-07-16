@@ -5,6 +5,8 @@ export type EnergyLevel = "deep" | "medium" | "shallow";
 export type TaskCategory = "work" | "life" | "study" | "health";
 export type Urgency = "urgent" | "normal" | "low";
 export type Importance = "important" | "normal" | "low";
+export type TaskKind = "task" | "milestone";
+export type ScheduleLevel = "stage" | "month" | "week" | "day";
 
 export interface Task {
   id: string;
@@ -23,6 +25,14 @@ export interface Task {
   dependencies: string[];
   source_text: string | null;
   progress_log: { content: string; recorded_at: string }[];
+  goal_id: string | null;
+  parent_id: string | null;
+  kind: TaskKind;
+  start_at: string | null;
+  planned_end_at: string | null;
+  weight: number;
+  sort_order: number;
+  schedule_level: ScheduleLevel | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -50,7 +60,7 @@ interface TaskStore {
 
   init: () => Promise<void>;
   setTasks: (tasks: Task[]) => void;
-  addTask: (task: Task) => Promise<void>;
+  addTask: (task: Task) => Promise<Task>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   appendTaskProgress: (taskId: string, content: string) => Promise<void>;
@@ -60,6 +70,7 @@ interface TaskStore {
   getFilteredTasks: () => Task[];
   getTaskStats: () => TaskStats;
   getTaskById: (id: string) => Task | undefined;
+  getChildTasks: (parentId: string) => Task[];
 
   selectTask: (id: string | null) => void;
   setFilters: (filters: Partial<TaskFilters>) => void;
@@ -104,30 +115,45 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   addTask: async (task) => {
     // Optimistic UI update
     set((s) => ({ tasks: [...s.tasks, task] }));
-    const created = await tauriInvoke<Task>("create_task", {
-      request: {
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        urgency: task.urgency,
-        importance: task.importance,
-        status: task.status,
-        deadline: task.deadline,
-        estimated_duration: task.estimated_duration,
-        energy_level: task.energy_level,
-        category: task.category,
-        tags: task.tags,
-        stakeholder: task.stakeholder,
-        dependencies: task.dependencies,
-        source_text: task.source_text,
-      },
-    });
-    // Replace with backend version (has correct timestamps)
-    if (created) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const created = await invoke<Task>("create_task", {
+        request: {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          urgency: task.urgency,
+          importance: task.importance,
+          status: task.status,
+          deadline: task.deadline,
+          estimated_duration: task.estimated_duration,
+          energy_level: task.energy_level,
+          category: task.category,
+          tags: task.tags,
+          stakeholder: task.stakeholder,
+          dependencies: task.dependencies,
+          source_text: task.source_text,
+          goal_id: task.goal_id,
+          parent_id: task.parent_id,
+          kind: task.kind,
+          start_at: task.start_at,
+          planned_end_at: task.planned_end_at,
+          weight: task.weight,
+          sort_order: task.sort_order,
+          schedule_level: task.schedule_level,
+        },
+      });
+      // Replace with backend version (has correct timestamps)
       set((s) => ({
-        tasks: s.tasks.map((t) => (t.id === task.id ? created : t)),
+        tasks: s.tasks.map((item) => (item.id === task.id ? created : item)),
       }));
+      return created;
+    } catch (error) {
+      const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      if (!isTauriRuntime) return task;
+      set((s) => ({ tasks: s.tasks.filter((item) => item.id !== task.id) }));
+      throw error;
     }
   },
 
@@ -239,6 +265,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   getTaskById: (id) => get().tasks.find((t) => t.id === id),
+  getChildTasks: (parentId) => get().tasks
+    .filter((t) => t.parent_id === parentId)
+    .sort((a, b) => a.sort_order - b.sort_order),
 
   selectTask: (id) => set({ selectedTaskId: id }),
 

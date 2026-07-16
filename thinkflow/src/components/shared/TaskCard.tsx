@@ -45,7 +45,8 @@ export default function TaskCard({
   style,
 }: TaskCardProps) {
   const { t } = useTranslation();
-  const { updateTask, moveTask, deleteTask } = useTaskStore();
+  const { updateTask, moveTask, deleteTask, tasks } = useTaskStore();
+  const parent = tasks.find((item) => item.id === task.parent_id);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -295,6 +296,12 @@ export default function TaskCard({
             )}
           </button>
         </div>
+
+        {parent && (
+          <div className="text-[10px] truncate" style={{ color: "#9f927d" }}>
+            {parent.title}
+          </div>
+        )}
 
         {/* Badges row */}
         <div className="flex flex-wrap items-center gap-1">
