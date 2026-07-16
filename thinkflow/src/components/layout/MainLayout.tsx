@@ -70,7 +70,7 @@ export default function MainLayout() {
         </nav>
         <Divider />
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <Time className="shrink-0 scale-[0.55]" />
+          <Time className="shrink-0 scale-50" />
         </div>
         <NavLink
           to="/settings"
