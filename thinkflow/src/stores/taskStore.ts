@@ -60,7 +60,7 @@ interface TaskStore {
 
   init: () => Promise<void>;
   setTasks: (tasks: Task[]) => void;
-  addTask: (task: Task) => Promise<void>;
+  addTask: (task: Task) => Promise<Task>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   appendTaskProgress: (taskId: string, content: string) => Promise<void>;
@@ -115,38 +115,45 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   addTask: async (task) => {
     // Optimistic UI update
     set((s) => ({ tasks: [...s.tasks, task] }));
-    const created = await tauriInvoke<Task>("create_task", {
-      request: {
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        urgency: task.urgency,
-        importance: task.importance,
-        status: task.status,
-        deadline: task.deadline,
-        estimated_duration: task.estimated_duration,
-        energy_level: task.energy_level,
-        category: task.category,
-        tags: task.tags,
-        stakeholder: task.stakeholder,
-        dependencies: task.dependencies,
-        source_text: task.source_text,
-        goal_id: task.goal_id,
-        parent_id: task.parent_id,
-        kind: task.kind,
-        start_at: task.start_at,
-        planned_end_at: task.planned_end_at,
-        weight: task.weight,
-        sort_order: task.sort_order,
-        schedule_level: task.schedule_level,
-      },
-    });
-    // Replace with backend version (has correct timestamps)
-    if (created) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const created = await invoke<Task>("create_task", {
+        request: {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          priority: task.priority,
+          urgency: task.urgency,
+          importance: task.importance,
+          status: task.status,
+          deadline: task.deadline,
+          estimated_duration: task.estimated_duration,
+          energy_level: task.energy_level,
+          category: task.category,
+          tags: task.tags,
+          stakeholder: task.stakeholder,
+          dependencies: task.dependencies,
+          source_text: task.source_text,
+          goal_id: task.goal_id,
+          parent_id: task.parent_id,
+          kind: task.kind,
+          start_at: task.start_at,
+          planned_end_at: task.planned_end_at,
+          weight: task.weight,
+          sort_order: task.sort_order,
+          schedule_level: task.schedule_level,
+        },
+      });
+      // Replace with backend version (has correct timestamps)
       set((s) => ({
-        tasks: s.tasks.map((t) => (t.id === task.id ? created : t)),
+        tasks: s.tasks.map((item) => (item.id === task.id ? created : item)),
       }));
+      return created;
+    } catch (error) {
+      const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      if (!isTauriRuntime) return task;
+      set((s) => ({ tasks: s.tasks.filter((item) => item.id !== task.id) }));
+      throw error;
     }
   },
 
