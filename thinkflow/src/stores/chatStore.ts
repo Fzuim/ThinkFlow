@@ -4,6 +4,7 @@ import { useGoalStore } from "@/stores/goalStore";
 
 const HISTORY_KEY = "task_assistant_history";
 const MAX_HISTORY = 100;
+const historyKeyFor = (goalId?: string | null) => goalId ? `${HISTORY_KEY}:goal:${goalId}` : HISTORY_KEY;
 function readChatRounds(): number { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } }
 
 
@@ -48,6 +49,7 @@ export interface ChatMessage {
   suggestedActions?: AssistantAction[];
   suggestedConfirmed?: boolean | null; // null=pending, true=yes, false=no
   timestamp: string;
+  scopeGoalId?: string;
 }
 
 interface ChatStore {
@@ -57,9 +59,10 @@ interface ChatStore {
   isLoaded: boolean;
   streamingContent: string;
   streamingReasoning: string;
+  activeGoalId: string | null;
 
-  init: () => Promise<void>;
-  sendMessage: (content: string, context?: string) => Promise<void>;
+  init: (goalId?: string | null) => Promise<void>;
+  sendMessage: (content: string, goalId?: string | null, context?: string) => Promise<void>;
   stopStreaming: () => void;
   confirmSuggested: (messageId: string, confirmed: boolean) => Promise<void>;
   clearChat: () => void;
@@ -74,20 +77,27 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
   }
 }
 
-async function persistMessages(messages: ChatMessage[]): Promise<void> {
+async function persistMessages(messages: ChatMessage[], goalId?: string | null): Promise<void> {
   const sliced = messages.slice(-MAX_HISTORY);
   await tauriInvoke("set_setting", {
-    key: HISTORY_KEY,
+    key: historyKeyFor(goalId),
     value: JSON.stringify(sliced),
   });
 }
 
-async function executeAction(action: AssistantAction): Promise<ActionResult> {
+async function executeAction(action: AssistantAction, goalScopeId?: string | null): Promise<ActionResult> {
   const taskStore = useTaskStore.getState();
 
   switch (action.type) {
     case "create": {
       const t = action.task ?? {};
+      const parentId = (t.parent_id as string) ?? null;
+      if (goalScopeId && parentId) {
+        const parent = taskStore.getTaskById(parentId);
+        if (!parent || parent.goal_id !== goalScopeId) {
+          return { success: false, error: "Parent task is outside the current goal" };
+        }
+      }
       const priority = typeof t.priority === "number" ? t.priority : 5;
       const task: Task = {
         id: (t._id as string) ?? crypto.randomUUID(),
@@ -106,8 +116,8 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
         dependencies: [],
         source_text: null,
         progress_log: [],
-        goal_id: (t.goal_id as string) ?? null,
-        parent_id: (t.parent_id as string) ?? null,
+        goal_id: goalScopeId ?? (t.goal_id as string) ?? null,
+        parent_id: parentId,
         kind: (t.kind as Task["kind"]) ?? "task",
         start_at: (t.start_at as string) ?? null,
         planned_end_at: (t.planned_end_at as string) ?? null,
@@ -122,6 +132,7 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
       return { success: true, taskTitle: task.title, entityId: task.id };
     }
     case "create_goal": {
+      if (goalScopeId) return { success: false, error: "Cannot create another goal in goal-scoped mode" };
       const input = action.goal ?? {};
       const goal = await useGoalStore.getState().addGoal({
         title: (input.title as string) ?? "Untitled goal",
@@ -137,12 +148,21 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
       if (!action.task_id) return { success: false, error: "Missing task_id" };
       const existing = taskStore.getTaskById(action.task_id);
       if (!existing) return { success: false, error: "Task not found" };
-      await taskStore.updateTask(action.task_id, action.updates as Partial<Task>);
+      if (goalScopeId && existing.goal_id !== goalScopeId) return { success: false, error: "Task is outside the current goal" };
+      const updates = { ...(action.updates as Partial<Task>) };
+      if (goalScopeId) updates.goal_id = goalScopeId;
+      if (goalScopeId && updates.parent_id) {
+        const parent = taskStore.getTaskById(updates.parent_id);
+        if (!parent || parent.goal_id !== goalScopeId) return { success: false, error: "Parent task is outside the current goal" };
+      }
+      await taskStore.updateTask(action.task_id, updates);
       return { success: true, taskTitle: existing.title };
     }
     case "delete": {
       if (!action.task_id) return { success: false, error: "Missing task_id" };
       const toDelete = taskStore.getTaskById(action.task_id);
+      if (!toDelete) return { success: false, error: "Task not found" };
+      if (goalScopeId && toDelete.goal_id !== goalScopeId) return { success: false, error: "Task is outside the current goal" };
       const title = toDelete?.title;
       await taskStore.deleteTask(action.task_id);
       return { success: true, taskTitle: title };
@@ -151,6 +171,7 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
       if (!action.task_id || !action.status) return { success: false, error: "Missing task_id or status" };
       const toMove = taskStore.getTaskById(action.task_id);
       if (!toMove) return { success: false, error: "Task not found" };
+      if (goalScopeId && toMove.goal_id !== goalScopeId) return { success: false, error: "Task is outside the current goal" };
       await taskStore.moveTask(action.task_id, action.status as Task["status"]);
       return { success: true, taskTitle: toMove.title };
     }
@@ -160,12 +181,15 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
       if (!action.task_id && !progressContent) return { success: false, error: "Missing task_id and content" };
       let taskId = action.task_id;
       if (!taskId) {
-        const allTasks = taskStore.tasks;
+        const allTasks = goalScopeId ? taskStore.tasks.filter((task) => task.goal_id === goalScopeId) : taskStore.tasks;
         const c = progressContent.toLowerCase();
         const match = allTasks.find(t => c.includes(t.title.toLowerCase()) || t.title.toLowerCase().includes(c));
         if (!match) return { success: false, error: "Cannot find matching task. Use exact task name from board." };
         taskId = match.id;
       }
+      const progressTask = taskStore.getTaskById(taskId);
+      if (!progressTask) return { success: false, error: "Task not found" };
+      if (goalScopeId && progressTask.goal_id !== goalScopeId) return { success: false, error: "Task is outside the current goal" };
       await taskStore.appendTaskProgress(taskId, progressContent);
       return { success: true };
     }
@@ -188,35 +212,50 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isLoaded: false,
   streamingContent: "",
   streamingReasoning: "",
+  activeGoalId: null,
 
-  init: async () => {
+  init: async (goalId) => {
+    const targetGoalId = goalId ?? null;
+    set({
+      messages: [],
+      error: null,
+      isLoaded: false,
+      loading: false,
+      streamingContent: "",
+      streamingReasoning: "",
+      activeGoalId: targetGoalId,
+    });
     const rounds = await tauriInvoke<string>("get_setting", { key: "chat_history_rounds" });
     if (rounds) {
       const n = parseInt(rounds, 10);
       if (!isNaN(n)) localStorage.setItem("thinkflow_chat_rounds", String(Math.max(1, Math.min(20, n))));
     }
-    const saved = await tauriInvoke<string>("get_setting", { key: HISTORY_KEY });
+    const saved = await tauriInvoke<string>("get_setting", { key: historyKeyFor(goalId) });
+    if (get().activeGoalId !== targetGoalId) return;
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as ChatMessage[];
         set({ messages: parsed, isLoaded: true });
       } catch {
-        set({ isLoaded: true });
+        set({ messages: [], isLoaded: true });
       }
     } else {
-      set({ isLoaded: true });
+      set({ messages: [], isLoaded: true });
     }
   },
 
-  sendMessage: async (content, context) => {
+  sendMessage: async (content, goalId, context) => {
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content,
       timestamp: new Date().toISOString(),
+      scopeGoalId: goalId ?? undefined,
     };
 
     set((s) => ({ messages: [...s.messages, userMsg], loading: true, error: null, streamingContent: "", streamingReasoning: "" }));
+    const requestMessages = get().messages;
+    const requestGoalId = goalId ?? null;
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -264,6 +303,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await invoke("task_assistant_stream", {
           message: context ? `${context}\n\n${content}` : content,
           history: JSON.stringify(historyPayload),
+          goalId: goalId ?? null,
         } as any);
       } catch (e: any) {
         // Check if streaming was cancelled by user
@@ -313,7 +353,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         try {
           let resolvedAction = { ...action };
           if (action.type === "create_goal") {
-            const result = await executeAction(resolvedAction);
+            const result = await executeAction(resolvedAction, goalId);
             if (result.entityId) lastCreatedGoalId = result.entityId;
             actionResults.push(result);
             continue;
@@ -330,7 +370,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           } else if (action.type === "move" && action.task_id === "__created__" && lastCreatedId) {
             resolvedAction = { ...resolvedAction, task_id: lastCreatedId };
           }
-          const result = await executeAction(resolvedAction);
+          const result = await executeAction(resolvedAction, goalId);
           actionResults.push(result);
         } catch (e: any) {
           actionResults.push({
@@ -351,13 +391,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         suggestedActions: finalDonePayload.suggested_actions?.length > 0 ? finalDonePayload.suggested_actions : undefined,
         suggestedConfirmed: finalDonePayload.suggested_actions?.length > 0 ? null : undefined,
         timestamp: new Date().toISOString(),
+        scopeGoalId: goalId ?? undefined,
       };
 
-      set((s) => {
-        const newMessages = [...s.messages, assistantMsg];
-        persistMessages(newMessages).catch(() => {});
-        return { messages: newMessages, loading: false, streamingContent: "", streamingReasoning: "" };
-      });
+      const newMessages = [...requestMessages, assistantMsg];
+      persistMessages(newMessages, goalId).catch(() => {});
+      set((s) => s.activeGoalId === requestGoalId
+        ? { messages: newMessages, loading: false, streamingContent: "", streamingReasoning: "" }
+        : s);
     } catch (e: any) {
       // Outer catch (e.g. dynamic import failure)
       let message: string;
@@ -394,6 +435,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Find the message and execute its suggested actions
     const msg = get().messages.find((m) => m.id === messageId);
     if (!msg?.suggestedActions) return;
+    const goalId = msg.scopeGoalId;
 
     const actionResults: ActionResult[] = [];
     let lastCreatedGoalId: string | null = null;
@@ -402,7 +444,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       try {
         let resolvedAction = { ...action };
         if (action.type === "create_goal") {
-          const result = await executeAction(resolvedAction);
+          const result = await executeAction(resolvedAction, goalId);
           if (result.entityId) lastCreatedGoalId = result.entityId;
           actionResults.push(result);
           continue;
@@ -417,7 +459,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (typeof task.ref_id === "string") createdTaskRefs.set(task.ref_id, newId);
           resolvedAction = { ...action, task };
         }
-        const result = await executeAction(resolvedAction);
+        const result = await executeAction(resolvedAction, goalId);
         actionResults.push(result);
       } catch (e: any) {
         actionResults.push({
@@ -442,7 +484,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
 
     // Persist
-    persistMessages(get().messages).catch(() => {});
+    persistMessages(get().messages, goalId).catch(() => {});
   },
 
   stopStreaming: () => {
@@ -454,7 +496,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   clearChat: () => {
+    const goalId = get().activeGoalId;
     set({ messages: [], error: null });
-    tauriInvoke("set_setting", { key: HISTORY_KEY, value: "" }).catch(() => {});
+    tauriInvoke("set_setting", { key: historyKeyFor(goalId), value: "" }).catch(() => {});
   },
 }));

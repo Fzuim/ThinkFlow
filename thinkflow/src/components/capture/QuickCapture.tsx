@@ -116,6 +116,7 @@ QuickCapture.Modal = function QuickCaptureModal({ onClose }: QuickCaptureProps) 
       const res = await invoke<TaskAssistantResponse>("task_assistant", {
         message: input.trim(),
         history: "[]",
+        goalId: null,
       });
 
       // Execute actions

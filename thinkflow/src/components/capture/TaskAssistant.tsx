@@ -17,6 +17,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useGoalStore } from "@/stores/goalStore";
@@ -151,9 +152,10 @@ export default function TaskAssistant() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const goalId = searchParams.get("goalId");
+  const isGoalPlanningMode = searchParams.get("mode") === "goal";
   const { goals, init: initGoals } = useGoalStore();
   const scopedGoal = goals.find((goal) => goal.id === goalId);
-  const { messages, loading, error, streamingContent, streamingReasoning, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
+  const { messages, loading, error, isLoaded, streamingContent, streamingReasoning, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
   const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [roundCount, setRoundCount] = useState(() => { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } });
@@ -180,7 +182,7 @@ export default function TaskAssistant() {
     if (streamingContent) setStreamingReasoningExpanded(false);
   }, [streamingContent]);
 
-  useEffect(() => { init(); }, [init]);
+  useEffect(() => { init(goalId); }, [init, goalId]);
   useEffect(() => { initGoals(); }, [initGoals]);
 
   // Auto-scroll to bottom on new messages
@@ -192,13 +194,15 @@ export default function TaskAssistant() {
 
   const handleSend = useCallback(() => {
     if (!input.trim() || loading) return;
-    const context = scopedGoal ? `Current goal context: [id:${scopedGoal.id}] "${scopedGoal.title}". Keep the discussion and actions scoped to this goal unless the user explicitly says otherwise.` : undefined;
-    sendMessage(input.trim(), context);
+    const context = !goalId && isGoalPlanningMode
+      ? "The user entered from Goal Plan and wants to define or decompose a new long-term goal. Guide them to clarify success criteria, target date, current level and available time."
+      : undefined;
+    sendMessage(input.trim(), goalId, context);
     setInput("");
     _draftInput = "";
     // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, loading, sendMessage, scopedGoal]);
+  }, [input, loading, sendMessage, goalId, isGoalPlanningMode]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -218,29 +222,57 @@ export default function TaskAssistant() {
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   }, []);
 
-  const suggestions = [
-    t("taskAssistant.suggestions.create"),
-    t("taskAssistant.suggestions.status"),
-    t("taskAssistant.suggestions.delete"),
-    t("taskAssistant.suggestions.help"),
-  ];
+  const suggestions = scopedGoal
+    ? [
+        t("taskAssistant.goalSuggestions.decompose"),
+        t("taskAssistant.goalSuggestions.adjust"),
+        t("taskAssistant.goalSuggestions.progress"),
+        t("taskAssistant.goalSuggestions.review"),
+      ]
+    : isGoalPlanningMode
+      ? [
+          t("taskAssistant.planningSuggestions.study"),
+          t("taskAssistant.planningSuggestions.career"),
+          t("taskAssistant.planningSuggestions.health"),
+          t("taskAssistant.planningSuggestions.clarify"),
+        ]
+      : [
+          t("taskAssistant.suggestions.create"),
+          t("taskAssistant.suggestions.status"),
+          t("taskAssistant.suggestions.delete"),
+          t("taskAssistant.suggestions.help"),
+        ];
 
   return (
     <div className="h-full flex flex-col" style={{ padding: "24px 32px" }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Button type="text" onClick={() => navigate("/")}>
+          <Button type="text" onClick={() => navigate(scopedGoal ? `/goals/${scopedGoal.id}` : isGoalPlanningMode ? "/goals" : "/")}>
             <ArrowLeft size={16} />
           </Button>
           <Icon name="icon-chat" size={22} style={{ color: "#19c8b9" }} />
-          <h2 className="text-xl font-semibold" style={{ color: "#725d42" }}>{t("taskAssistant.title")}</h2>
+          <h2 className="text-xl font-semibold" style={{ color: "#725d42" }}>
+            {t(scopedGoal ? "taskAssistant.goalTitle" : isGoalPlanningMode ? "taskAssistant.planningTitle" : "taskAssistant.title")}
+          </h2>
           {scopedGoal && <button onClick={() => navigate(`/goals/${scopedGoal.id}`)} className="text-xs px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{scopedGoal.title}</button>}
         </div>
         <Button type="text" onClick={clearChat} title={t("taskAssistant.clearChat")}>
           <Trash2 size={16} />
         </Button>
       </div>
+
+      {scopedGoal && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 mb-4 text-xs" style={{ borderRadius: 14, background: "#eef8f6", border: "1px solid #bde5df", color: "#39766f" }}>
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} />
+            <span>{t("taskAssistant.strictScope", { goal: scopedGoal.title })}</span>
+          </div>
+          <button className="font-semibold whitespace-nowrap" style={{ color: "#168f85" }} onClick={() => navigate("/capture")}>
+            {t("taskAssistant.switchGeneral")}
+          </button>
+        </div>
+      )}
 
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto space-y-4 mb-4 flex flex-col items-center">
@@ -260,7 +292,7 @@ export default function TaskAssistant() {
               <Icon name="icon-chat" size={48} style={{ color: "#19c8b9" }} />
             </div>
             <p className="text-sm max-w-sm" style={{ color: "#9f927d" }}>
-              {t("taskAssistant.welcome")}
+              {t(scopedGoal ? "taskAssistant.goalWelcome" : isGoalPlanningMode ? "taskAssistant.planningWelcome" : "taskAssistant.welcome")}
             </p>
             <div className="space-y-2 w-full">
               {suggestions.map((s, i) => (
@@ -520,7 +552,7 @@ export default function TaskAssistant() {
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             rows={2}
-            disabled={loading}
+            disabled={loading || !isLoaded}
             style={{
               width: "100%",
               boxSizing: "border-box",
@@ -610,7 +642,7 @@ export default function TaskAssistant() {
               <Button
                 type="primary"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() || !isLoaded}
                 style={{
                   minWidth: 36,
                   height: 36,

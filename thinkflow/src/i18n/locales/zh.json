@@ -122,17 +122,35 @@
   },
   "taskAssistant": {
     "title": "AI 任务助手",
+    "planningTitle": "AI 目标规划",
+    "goalTitle": "目标内 AI 助手",
     "placeholder": "告诉我你需要什么… (⌘/Ctrl+Enter 发送)",
     "send": "发送",
     "thinking": "思考中...",
     "thoughtProcess": "思考过程",
     "clearChat": "清空",
     "welcome": "你好！我是你的任务助手，可以帮你创建、修改、删除和整理任务。用自然语言告诉我就行。",
+    "planningWelcome": "告诉我你想实现的长期目标。我会先了解成功标准、截止时间、当前基础和可投入时间，再和你确认计划。",
+    "goalWelcome": "这段对话只处理当前目标及其阶段、任务和进度。你可以让我继续拆解、记录成果、复盘或调整计划。",
+    "strictScope": "严格目标作用域：只会读取和修改“{{goal}}”中的内容",
+    "switchGeneral": "切换到通用助手",
     "suggestions": {
       "create": "创建：下周一前写完Q2报告",
       "status": "状态：把Q2报告标记为已完成",
       "delete": "删除：删掉买牛奶这个任务",
       "help": "帮助：我现在该做什么"
+    },
+    "planningSuggestions": {
+      "study": "我今年想考造价师，帮我制定计划",
+      "career": "我想在半年内完成一次职业能力提升",
+      "health": "帮我规划一个三个月的健康目标",
+      "clarify": "先问我几个问题，帮我把目标想清楚"
+    },
+    "goalSuggestions": {
+      "decompose": "根据当前进度，拆解下一个月和本周任务",
+      "adjust": "最近有延误，和我沟通原因并调整后续计划",
+      "progress": "我想汇报今天的成果并记录进度",
+      "review": "帮我复盘当前目标完成情况和风险"
     },
     "actions": {
       "created": "已创建",

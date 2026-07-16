@@ -123,17 +123,35 @@
   },
   "taskAssistant": {
     "title": "AI Task Assistant",
+    "planningTitle": "AI Goal Planner",
+    "goalTitle": "Goal AI Assistant",
     "placeholder": "Tell me what you need… (⌘/Ctrl+Enter to send)",
     "send": "Send",
     "thinking": "Thinking...",
     "thoughtProcess": "Thought Process",
     "clearChat": "Clear",
     "welcome": "Hi! I'm your task assistant. I can create, update, delete, and organize your tasks. Just tell me what you need in natural language.",
+    "planningWelcome": "Tell me the long-term goal you want to achieve. I will clarify success criteria, target date, current level, and available time before confirming a plan with you.",
+    "goalWelcome": "This conversation only handles the current goal, its stages, tasks, and progress. Ask me to decompose work, record outcomes, review, or adjust the plan.",
+    "strictScope": "Strict goal scope: only content inside “{{goal}}” can be read or changed",
+    "switchGeneral": "Switch to general assistant",
     "suggestions": {
       "create": "Create: Finish Q2 report by next Monday",
       "status": "Status: Mark Q2 report as completed",
       "delete": "Delete: Remove the milk task",
       "help": "Help: What should I do now?"
+    },
+    "planningSuggestions": {
+      "study": "I want to earn a professional certification this year—help me plan it",
+      "career": "I want to improve my professional skills within six months",
+      "health": "Help me plan a three-month health goal",
+      "clarify": "Ask me a few questions to clarify my goal first"
+    },
+    "goalSuggestions": {
+      "decompose": "Use current progress to plan next month and this week",
+      "adjust": "I am delayed—discuss why and adjust the remaining plan",
+      "progress": "I want to share today's outcome and record progress",
+      "review": "Review this goal's progress and risks"
     },
     "actions": {
       "created": "Created",

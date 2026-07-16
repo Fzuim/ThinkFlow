@@ -47,6 +47,7 @@ impl TaskAssistantAgent {
         task_details: Option<&str>,
         memory_context: &str,
         history: &[ChatMessage],
+        scope_goal: Option<&Goal>,
     ) -> ChatCompletionRequest {
         let now = Local::now();
         let today_full = now.format("%Y-%m-%d (%A)").to_string();
@@ -96,6 +97,21 @@ impl TaskAssistantAgent {
             format!("\nKnown user context:\n{memory_context}")
         };
 
+        let scope_section = scope_goal.map_or_else(String::new, |goal| {
+            format!(
+                r#"
+## Strict goal scope
+This conversation is scoped to the existing goal [id:{id}] "{title}".
+- Only discuss and act on this goal and the tasks listed under it.
+- Every create action MUST set goal_id to "{id}".
+- Do not create another goal and do not operate on tasks outside this goal.
+- If the user asks to work on ordinary tasks or another goal, explain that they must switch to the general AI assistant.
+"#,
+                id = goal.id,
+                title = goal.title,
+            )
+        });
+
         let system_prompt = format!(
             r#"Current date: {today_full}
 Current datetime: {now_str}
@@ -106,7 +122,7 @@ You are a task management assistant. The user speaks to you in natural language.
 
 IMPORTANT: The task list below is the CURRENT state from the database. Users may have manually changed task statuses since your last conversation. ALWAYS trust the task list below over any previous conversation history. If a task shows status "todo" in the list, treat it as todo regardless of what you said before.
 
-{task_list}{detail_section}{memory_section}
+{task_list}{detail_section}{memory_section}{scope_section}
 
 ## 时间筛选规则（重要）:
 - 任务列表中每个任务都带有 `created`（创建时间）和 `completed`（完成时间，"-"表示未完成）字段，格式为 ISO 8601（如 2026-07-05T10:30:00）。
