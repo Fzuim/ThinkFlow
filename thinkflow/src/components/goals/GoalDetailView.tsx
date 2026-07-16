@@ -7,6 +7,14 @@ import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
 import { useTaskStore, type Task, type TaskKind } from "@/stores/taskStore";
 
+function getDescendantIds(tasks: Task[], parentId: string): string[] {
+  const result: string[] = [];
+  for (const child of tasks.filter((task) => task.parent_id === parentId)) {
+    result.push(...getDescendantIds(tasks, child.id), child.id);
+  }
+  return result;
+}
+
 export default function GoalDetailView() {
   const { goalId = "" } = useParams();
   const navigate = useNavigate();
@@ -18,6 +26,7 @@ export default function GoalDetailView() {
   const [kind, setKind] = useState<TaskKind>("task");
   const [plannedEnd, setPlannedEnd] = useState("");
   const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
   useEffect(() => { initGoals(); initTasks(); }, [initGoals, initTasks]);
   useEffect(() => {
@@ -88,23 +97,15 @@ export default function GoalDetailView() {
     closeDialog();
   };
 
-  const deleteNode = async (id: string) => {
-    const descendantIds: string[] = [];
-    const collectDescendants = (parentId: string) => {
-      for (const child of goalTasks.filter((task) => task.parent_id === parentId)) {
-        collectDescendants(child.id);
-        descendantIds.push(child.id);
-      }
-    };
-    collectDescendants(id);
-    const node = goalTasks.find((task) => task.id === id);
-    const message = descendantIds.length > 0
-      ? t("goals.deleteNodeConfirmWithChildren", { title: node?.title ?? "", count: descendantIds.length })
-      : t("goals.deleteNodeConfirm", { title: node?.title ?? "" });
-    if (!window.confirm(message)) return;
+  const deleteNode = async () => {
+    if (!deleteTarget) return;
+    const descendantIds = getDescendantIds(goalTasks, deleteTarget.id);
     for (const descendantId of descendantIds) await deleteTask(descendantId);
-    await deleteTask(id);
+    await deleteTask(deleteTarget.id);
+    setDeleteTarget(null);
   };
+
+  const deleteDescendantCount = deleteTarget ? getDescendantIds(goalTasks, deleteTarget.id).length : 0;
 
   if (!goal) {
     return <div className="h-full flex items-center justify-center" style={{ color: "#9f927d" }}>{t("goals.notFound")}</div>;
@@ -163,6 +164,21 @@ export default function GoalDetailView() {
         </div>
       </Modal>
 
+      <Modal
+        open={deleteTarget !== null}
+        title={t("goals.deleteNode")}
+        onClose={() => setDeleteTarget(null)}
+        onOk={deleteNode}
+        typewriter={false}
+        width={420}
+      >
+        <p className="text-sm leading-6" style={{ color: "#725d42" }}>
+          {deleteTarget && (deleteDescendantCount > 0
+            ? t("goals.deleteNodeConfirmWithChildren", { title: deleteTarget.title, count: deleteDescendantCount })
+            : t("goals.deleteNodeConfirm", { title: deleteTarget.title }))}
+        </p>
+      </Modal>
+
       {contextMenu && createPortal(
         <div
           className="fixed min-w-32 p-1"
@@ -182,9 +198,9 @@ export default function GoalDetailView() {
             className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[#fbe9e6]"
             style={{ borderRadius: 8, color: "#d75b4e" }}
             onClick={() => {
-              const taskId = contextMenu.task.id;
+              const task = contextMenu.task;
               setContextMenu(null);
-              void deleteNode(taskId);
+              setDeleteTarget(task);
             }}
           >
             <Trash2 size={14} />{t("goals.deleteNode")}
