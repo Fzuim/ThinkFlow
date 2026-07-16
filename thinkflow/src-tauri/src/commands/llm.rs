@@ -234,14 +234,17 @@ pub async fn daily_brief(db: State<'_, Database>) -> Result<DailyBriefResult, St
     }
 
     let tasks = db.get_all_tasks().map_err(|e| e.to_string())?;
+    let goals = db.get_all_goals().map_err(|e| e.to_string())?;
 
-    if tasks.is_empty() {
+    if tasks.is_empty() && goals.is_empty() {
         return Ok(DailyBriefResult {
-            briefing: "No tasks yet. Capture some tasks in Quick Capture to get your daily briefing!".into(),
+            briefing:
+                "No tasks yet. Capture some tasks in Quick Capture to get your daily briefing!\n\n## 目标计划分析\n\n暂无目标计划。"
+                    .into(),
         });
     }
 
-    let mut request = crate::agents::briefing::BriefingAgent::build_prompt(&tasks);
+    let mut request = crate::agents::briefing::BriefingAgent::build_prompt(&tasks, &goals);
     request.model = config.model.clone();
 
     if let Some(temp) = config.extra_params.get("temperature").and_then(|v| v.as_f64()) {

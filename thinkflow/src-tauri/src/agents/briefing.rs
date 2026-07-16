@@ -1,13 +1,14 @@
 use crate::llm::provider::{ChatCompletionRequest, ChatMessage};
-use crate::models::Task;
+use crate::models::{Goal, Task};
 use chrono::{Datelike, Local, NaiveDate};
+use std::collections::{HashMap, HashSet};
 
 pub struct BriefingAgent;
 
 impl BriefingAgent {
-    /// Build a prompt that asks the LLM to generate a daily briefing from the user's tasks.
+    /// Build a prompt that asks the LLM to generate a daily briefing from the user's tasks and goals.
     /// For completed tasks, only those finished yesterday (or today) are included.
-    pub fn build_prompt(tasks: &[Task]) -> ChatCompletionRequest {
+    pub fn build_prompt(tasks: &[Task], goals: &[Goal]) -> ChatCompletionRequest {
         let now = Local::now();
         let today = now.format("%Y-%m-%d").to_string();
         let yesterday = (now - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
@@ -34,6 +35,11 @@ impl BriefingAgent {
         } else {
             None
         };
+
+        let goal_names: HashMap<&str, &str> = goals
+            .iter()
+            .map(|goal| (goal.id.as_str(), goal.title.as_str()))
+            .collect();
 
         // Build a compact task summary:
         // - Friday: include all tasks from this week (Monday onward)
@@ -85,6 +91,11 @@ impl BriefingAgent {
                 .map(|d| format!("deadline: {d}"))
                 .unwrap_or_else(|| "no deadline".to_string());
             let cat = t.category.as_deref().unwrap_or("none");
+            let goal_title = t
+                .goal_id
+                .as_deref()
+                .and_then(|goal_id| goal_names.get(goal_id).copied())
+                .unwrap_or("none");
             let completed_info = t.completed_at.as_ref().map(|ca| format!(" | completed:{ca}")).unwrap_or_default();
 
             // Inject description and progress log for tasks that have them
@@ -108,15 +119,83 @@ impl BriefingAgent {
             };
 
             task_list.push_str(&format!(
-                "- [{status}] \"{title}\" | priority:{prio}/10 | {deadline} | category:{cat}{completed_info}{detail_info}\n",
+                "- [{status}] \"{title}\" | priority:{prio}/10 | {deadline} | category:{cat} | goal:{goal_title}{completed_info}{detail_info}\n",
                 status = t.status,
                 title = t.title,
                 prio = t.priority,
                 deadline = deadline_str,
                 cat = cat,
+                goal_title = goal_title,
                 completed_info = completed_info,
                 detail_info = detail_info,
             ));
+        }
+
+        let mut goal_list = String::new();
+        for goal in goals.iter().filter(|goal| goal.status != "abandoned") {
+            let goal_tasks: Vec<&Task> = tasks
+                .iter()
+                .filter(|task| task.goal_id.as_deref() == Some(goal.id.as_str()))
+                .collect();
+            let parent_ids: HashSet<&str> = goal_tasks
+                .iter()
+                .filter_map(|task| task.parent_id.as_deref())
+                .collect();
+            let leaves: Vec<&Task> = goal_tasks
+                .iter()
+                .copied()
+                .filter(|task| !parent_ids.contains(task.id.as_str()))
+                .collect();
+            let total_weight: f64 = leaves.iter().map(|task| task.weight.max(0.1)).sum();
+            let completed_weight: f64 = leaves
+                .iter()
+                .filter(|task| task.status == "done")
+                .map(|task| task.weight.max(0.1))
+                .sum();
+            let progress = if total_weight > 0.0 {
+                ((completed_weight / total_weight) * 100.0).round() as i32
+            } else {
+                0
+            };
+            let completed_count = leaves.iter().filter(|task| task.status == "done").count();
+            let overdue_count = leaves
+                .iter()
+                .filter(|task| {
+                    if task.status == "done" {
+                        return false;
+                    }
+                    task.planned_end_at
+                        .as_deref()
+                        .or(task.deadline.as_deref())
+                        .and_then(|date| date.get(..10))
+                        .is_some_and(|date| date < today.as_str())
+                })
+                .count();
+            let unfinished_titles = leaves
+                .iter()
+                .filter(|task| task.status != "done")
+                .take(5)
+                .map(|task| task.title.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+
+            goal_list.push_str(&format!(
+                "- \"{title}\" | status:{status} | progress:{progress}% | period:{start} -> {target} | completed:{completed}/{total} | overdue:{overdue}\n  description:{description}\n  success criteria:{criteria}\n  next tasks:{unfinished}\n",
+                title = goal.title,
+                status = goal.status,
+                progress = progress,
+                start = goal.start_date.as_deref().unwrap_or("unset"),
+                target = goal.target_date.as_deref().unwrap_or("unset"),
+                completed = completed_count,
+                total = leaves.len(),
+                overdue = overdue_count,
+                description = if goal.description.is_empty() { "none" } else { &goal.description },
+                criteria = if goal.success_criteria.is_empty() { "none" } else { &goal.success_criteria },
+                unfinished = if unfinished_titles.is_empty() { "none" } else { &unfinished_titles },
+            ));
+        }
+        if goal_list.is_empty() {
+            goal_list.push_str("- 暂无目标计划\n");
         }
 
         let monday_section = if is_monday {
@@ -156,7 +235,8 @@ impl BriefingAgent {
 3. **进行中**：正在推进的任务（status "in_progress"）
 4. **逾期或紧急**：已过截止日期或优先级 8+ 的任务
 5. **今日建议**：推荐 2-3 个今天应重点处理的任务，按优先级排序
-{monday_section}{friday_section}6. 一句简短的鼓励性结语
+6. **目标计划分析**：必须使用独立的二级标题 `## 目标计划分析`。逐个分析目标的当前进度、期限风险、计划偏差和下一步行动，不要混入“进行中”或“今日建议”章节；若暂无目标计划，也保留该标题并简短说明
+{monday_section}{friday_section}7. 一句简短的鼓励性结语
 
 {task_note}
 
@@ -171,7 +251,7 @@ impl BriefingAgent {
         );
 
         let user_message = format!(
-            "以下是我的任务：\n\n{task_list}\n请生成我的每日简报。"
+            "以下是我的任务：\n\n{task_list}\n以下是我的目标计划：\n\n{goal_list}\n请生成我的每日简报，并将目标计划分析单列为独立章节。"
         );
 
         ChatCompletionRequest {
@@ -193,5 +273,20 @@ impl BriefingAgent {
             response_format: Some(serde_json::json!({"type": "json_object"})),
             stream: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BriefingAgent;
+
+    #[test]
+    fn prompt_requires_a_separate_goal_analysis_section() {
+        let request = BriefingAgent::build_prompt(&[], &[]);
+
+        assert!(request.messages[0]
+            .content
+            .contains("`## 目标计划分析`"));
+        assert!(request.messages[1].content.contains("暂无目标计划"));
     }
 }
