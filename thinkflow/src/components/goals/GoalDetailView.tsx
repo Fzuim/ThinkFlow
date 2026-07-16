@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Checkbox, Icon, Modal, Progress } from "animal-island-ui";
 import item001 from "animal-island-ui/items/item-001.png";
+import item476 from "animal-island-ui/items/item-476.png";
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Diamond, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
@@ -290,7 +291,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onOpenMenu
         }}
       >
         <button onClick={() => setExpanded((value) => !value)} className="w-5" style={{ color: "#9f927d" }}>{isParent ? (expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />) : null}</button>
-        {task.kind === "milestone" ? <Diamond size={15} style={{ color: "#889df0" }} /> : (
+        {task.kind === "milestone" ? <Icon src={item476} size={18} /> : (
           <Checkbox
             options={[{
               label: <span className="sr-only">{task.status === "done" ? t("goals.markTodo") : t("goals.markDone")}</span>,
