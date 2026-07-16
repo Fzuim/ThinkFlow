@@ -15,6 +15,20 @@ function getDescendantIds(tasks: Task[], parentId: string): string[] {
   return result;
 }
 
+function compareTasksByPlannedDate(left: Task, right: Task): number {
+  const leftDate = left.planned_end_at || left.deadline;
+  const rightDate = right.planned_end_at || right.deadline;
+  if (leftDate && rightDate) {
+    const dateDifference = Date.parse(leftDate) - Date.parse(rightDate);
+    if (Number.isFinite(dateDifference) && dateDifference !== 0) return dateDifference;
+  } else if (leftDate) {
+    return -1;
+  } else if (rightDate) {
+    return 1;
+  }
+  return left.sort_order - right.sort_order;
+}
+
 export default function GoalDetailView() {
   const { goalId = "" } = useParams();
   const navigate = useNavigate();
@@ -46,7 +60,7 @@ export default function GoalDetailView() {
   }, [contextMenu]);
   const goal = goals.find((item) => item.id === goalId);
   const goalTasks = useMemo(
-    () => tasks.filter((task) => task.goal_id === goalId).sort((a, b) => a.sort_order - b.sort_order),
+    () => tasks.filter((task) => task.goal_id === goalId).sort(compareTasksByPlannedDate),
     [tasks, goalId],
   );
   const taskIds = useMemo(() => new Set(goalTasks.map((task) => task.id)), [goalTasks]);
@@ -260,7 +274,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onOpenMenu
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
-  const children = allTasks.filter((child) => child.parent_id === task.id).sort((a, b) => a.sort_order - b.sort_order);
+  const children = allTasks.filter((child) => child.parent_id === task.id).sort(compareTasksByPlannedDate);
   const completed = children.filter((child) => child.status === "done").length;
   const isParent = children.length > 0 || task.kind === "milestone";
   return (
