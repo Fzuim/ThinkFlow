@@ -138,7 +138,7 @@
     "planningTitle": "AI 目标规划",
     "goalTitle": "目标内 AI 助手",
     "placeholder": "告诉我你需要什么… (⌘/Ctrl+Enter 发送)",
-    "chatRoundsHint": "控制每次请求向 AI 注入的历史对话轮数。轮数越多，上下文越完整，但会消耗更多 Token。",
+    "chatRoundsHint": "控制注入AI的历史对话轮数",
     "send": "发送",
     "thinking": "思考中...",
     "thoughtProcess": "思考过程",

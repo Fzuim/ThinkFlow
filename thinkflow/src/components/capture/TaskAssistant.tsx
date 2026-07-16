@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Icon, Tooltip } from "animal-island-ui";
+import { Button, Icon } from "animal-island-ui";
 import { useChatStore, type ChatMessage, type ActionResult } from "@/stores/chatStore";
 import {
   ArrowLeft,
@@ -160,9 +160,39 @@ export default function TaskAssistant() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [roundCount, setRoundCount] = useState(() => { try { const v = localStorage.getItem("thinkflow_chat_rounds"); return v ? Math.max(1, Math.min(20, parseInt(v, 10))) : 3; } catch { return 3; } });
   const [showSlider, setShowSlider] = useState(false);
+  const [showRoundTip, setShowRoundTip] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const roundTipTimerRef = useRef<number | null>(null);
+
+  const clearRoundTipTimer = useCallback(() => {
+    if (roundTipTimerRef.current !== null) {
+      window.clearTimeout(roundTipTimerRef.current);
+      roundTipTimerRef.current = null;
+    }
+  }, []);
+
+  const hideRoundTip = useCallback(() => {
+    clearRoundTipTimer();
+    setShowRoundTip(false);
+  }, [clearRoundTipTimer]);
+
+  const scheduleRoundTip = useCallback(() => {
+    if (showSlider) return;
+    clearRoundTipTimer();
+    roundTipTimerRef.current = window.setTimeout(() => {
+      setShowRoundTip(true);
+      roundTipTimerRef.current = null;
+    }, 1000);
+  }, [clearRoundTipTimer, showSlider]);
+
+  const toggleRoundsSlider = useCallback(() => {
+    hideRoundTip();
+    setShowSlider((visible) => !visible);
+  }, [hideRoundTip]);
+
+  useEffect(() => () => clearRoundTipTimer(), [clearRoundTipTimer]);
 
   const toggleReasoning = useCallback((id: string) => {
     setExpandedReasoning((prev) => {
@@ -578,26 +608,60 @@ export default function TaskAssistant() {
             }}
           >
             {/* Rounds chip + popover */}
-            <div style={{ position: "relative" }}>
-              <Tooltip title={t("taskAssistant.chatRoundsHint")} placement="top-start">
+            <div style={{ position: "relative" }} onMouseEnter={scheduleRoundTip} onMouseLeave={hideRoundTip}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={showSlider}
+                aria-describedby={showRoundTip ? "chat-rounds-tip" : undefined}
+                onFocus={scheduleRoundTip}
+                onBlur={hideRoundTip}
+                onClick={toggleRoundsSlider}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggleRoundsSlider();
+                  }
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 9px",
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  background: "#f0e8d8",
+                  border: "1.5px solid #c4b89e",
+                  userSelect: "none",
+                }}
+              >
+                <Icon name="icon-chat" size={13} style={{ color: "#725d42" }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#725d42" }}>{roundCount}</span>
+              </div>
+              {showRoundTip && !showSlider && (
                 <div
-                  onClick={() => setShowSlider(!showSlider)}
+                  id="chat-rounds-tip"
+                  role="tooltip"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "3px 9px",
-                    borderRadius: 16,
-                    cursor: "pointer",
-                    background: "#f0e8d8",
-                    border: "1.5px solid #c4b89e",
-                    userSelect: "none",
+                    position: "absolute",
+                    bottom: 32,
+                    left: 0,
+                    width: "max-content",
+                    maxWidth: 220,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    background: "#725d42",
+                    color: "#fffdf7",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    boxShadow: "0 4px 12px rgba(80,65,45,0.22)",
+                    pointerEvents: "none",
+                    zIndex: 11,
                   }}
                 >
-                  <Icon name="icon-chat" size={13} style={{ color: "#725d42" }} />
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#725d42" }}>{roundCount}</span>
+                  {t("taskAssistant.chatRoundsHint")}
                 </div>
-              </Tooltip>
+              )}
               {showSlider && (
                 <div
                   style={{
