@@ -74,6 +74,12 @@
     "addFirstStage": "Add First Stage",
     "addChild": "Add Child Task",
     "child": "Child",
+    "markDone": "Mark as done",
+    "markTodo": "Restore to todo",
+    "doubleClickComplete": "Double-click to toggle completion",
+    "deleteNode": "Delete",
+    "deleteNodeConfirm": "Delete “{{title}}”?",
+    "deleteNodeConfirmWithChildren": "Delete “{{title}}” and its {{count}} child nodes? This cannot be undone.",
     "noStages": "No stages yet. Start with the first layer of your roadmap.",
     "form": {
       "title": "Goal title",

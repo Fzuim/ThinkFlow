@@ -74,6 +74,12 @@
     "addFirstStage": "添加第一个阶段",
     "addChild": "添加子任务",
     "child": "子任务",
+    "markDone": "标记为完成",
+    "markTodo": "恢复为待办",
+    "doubleClickComplete": "双击切换完成状态",
+    "deleteNode": "删除",
+    "deleteNodeConfirm": "确认删除“{{title}}”吗？",
+    "deleteNodeConfirmWithChildren": "确认删除“{{title}}”及其 {{count}} 个子节点吗？此操作无法撤销。",
     "noStages": "还没有阶段，先搭建目标的第一层路线图。",
     "form": {
       "title": "目标名称",
