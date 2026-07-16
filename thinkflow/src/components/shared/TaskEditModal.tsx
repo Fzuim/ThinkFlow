@@ -6,7 +6,6 @@ import { Modal } from "animal-island-ui";
 import { Input } from "animal-island-ui";
 import { Select } from "animal-island-ui";
 import { X, Maximize2, Minimize2 } from "lucide-react";
-import { useGoalStore } from "@/stores/goalStore";
 
 interface TaskEditModalProps {
   open: boolean;
@@ -44,7 +43,6 @@ const focusHandlers = {
 export default function TaskEditModal({ open, task, onClose }: TaskEditModalProps) {
   const { t } = useTranslation();
   const { updateTask, tasks } = useTaskStore();
-  const { goals, init: initGoals } = useGoalStore();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -58,7 +56,6 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
   const [tagInput, setTagInput] = useState("");
   const [estimatedDuration, setEstimatedDuration] = useState("");
   const [descExpanded, setDescExpanded] = useState(false);
-  const [goalId, setGoalId] = useState("");
   const [parentId, setParentId] = useState("");
   const [kind, setKind] = useState<Task["kind"]>("task");
   const invalidParentIds = useMemo(() => {
@@ -78,8 +75,6 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
     return invalid;
   }, [task, tasks]);
 
-  useEffect(() => { initGoals(); }, [initGoals]);
-
   // Sync form with task when opened
   useEffect(() => {
     if (task && open) {
@@ -92,7 +87,6 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
       setTags(task.tags);
       setTagInput("");
       setEstimatedDuration(task.estimated_duration?.toString() ?? "");
-      setGoalId(task.goal_id ?? "");
       setParentId(task.parent_id ?? "");
       setKind(task.kind);
     }
@@ -131,13 +125,12 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
       energy_level: (energyLevel || null) as Task["energy_level"],
       tags,
       estimated_duration: estimatedDuration ? parseInt(estimatedDuration) : null,
-      goal_id: goalId || null,
       parent_id: parentId || null,
       kind,
     };
     updateTask(task.id, updates);
     onClose();
-  }, [task, title, description, priority, deadline, category, energyLevel, tags, estimatedDuration, goalId, parentId, kind, updateTask, onClose]);
+  }, [task, title, description, priority, deadline, category, energyLevel, tags, estimatedDuration, parentId, kind, updateTask, onClose]);
 
   const categoryOptions = [
     { key: "", label: t("taskEdit.noCategory") },
@@ -225,19 +218,12 @@ export default function TaskEditModal({ open, task, onClose }: TaskEditModalProp
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <label>
-            <span className="text-xs font-semibold mb-1 block" style={{ color: "#9f927d" }}>{t("taskEdit.goal")}</span>
-            <select value={goalId} onChange={(e) => { setGoalId(e.target.value); setParentId(""); }} style={{ ...inputStyle, padding: "8px 10px", boxShadow: "none", borderWidth: 2 }}>
-              <option value="">{t("taskEdit.noGoal")}</option>
-              {goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}
-            </select>
-          </label>
+        <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="text-xs font-semibold mb-1 block" style={{ color: "#9f927d" }}>{t("taskEdit.parent")}</span>
             <select value={parentId} onChange={(e) => setParentId(e.target.value)} style={{ ...inputStyle, padding: "8px 10px", boxShadow: "none", borderWidth: 2 }}>
               <option value="">{t("taskEdit.noParent")}</option>
-              {tasks.filter((candidate) => !invalidParentIds.has(candidate.id) && (!goalId || candidate.goal_id === goalId)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
+              {tasks.filter((candidate) => !invalidParentIds.has(candidate.id) && candidate.goal_id === null).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
             </select>
           </label>
           <label>

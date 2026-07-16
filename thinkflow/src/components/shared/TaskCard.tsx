@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { Task, TaskStatus } from "@/stores/taskStore";
 import { useTaskStore } from "@/stores/taskStore";
 import { useTranslation } from "react-i18next";
-import { useGoalStore } from "@/stores/goalStore";
 import PriorityBadge from "@/components/shared/PriorityBadge";
 import CategoryBadge from "@/components/shared/CategoryBadge";
 import EnergyLevelIndicator from "@/components/shared/EnergyLevelIndicator";
@@ -47,8 +46,6 @@ export default function TaskCard({
 }: TaskCardProps) {
   const { t } = useTranslation();
   const { updateTask, moveTask, deleteTask, tasks } = useTaskStore();
-  const goals = useGoalStore((state) => state.goals);
-  const goal = goals.find((item) => item.id === task.goal_id);
   const parent = tasks.find((item) => item.id === task.parent_id);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title);
@@ -300,9 +297,9 @@ export default function TaskCard({
           </button>
         </div>
 
-        {(goal || parent) && (
+        {parent && (
           <div className="text-[10px] truncate" style={{ color: "#9f927d" }}>
-            {[goal?.title, parent?.title].filter(Boolean).join(" / ")}
+            {parent.title}
           </div>
         )}
 

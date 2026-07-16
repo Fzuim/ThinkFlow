@@ -15,9 +15,6 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useGoalStore } from "@/stores/goalStore";
-
-type GroupMode = "none" | "goal" | "parent";
 
 const columns: { status: TaskStatus; accentColor: string }[] = [
   { status: "todo", accentColor: "#9f927d" },
@@ -61,16 +58,11 @@ export default function TaskBoard() {
   useEffect(() => {
     init();
   }, [init]);
-  const { goals, init: initGoals } = useGoalStore();
-  useEffect(() => { initGoals(); }, [initGoals]);
-
   const navigate = useNavigate();
 
   const [showFilters, setShowFilters] = useState(false);
   const [quickAddStatus, setQuickAddStatus] = useState<TaskStatus | null>(null);
   const [quickAddTitle, setQuickAddTitle] = useState("");
-  const [groupMode, setGroupMode] = useState<GroupMode>("none");
-  const [executableOnly, setExecutableOnly] = useState(true);
 
   // ── Pointer-based drag state ──
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -168,12 +160,7 @@ export default function TaskBoard() {
   }, []);
 
   const stats = useMemo(() => getTaskStats(), [tasks, getTaskStats]);
-  const filteredTasks = useMemo(() => getFilteredTasks(), [tasks, filters, getFilteredTasks]);
-  const displayTasks = useMemo(() => {
-    if (!executableOnly) return filteredTasks;
-    const parentIds = new Set(tasks.map((task) => task.parent_id).filter(Boolean));
-    return filteredTasks.filter((task) => !parentIds.has(task.id));
-  }, [filteredTasks, tasks, executableOnly]);
+  const filteredTasks = getFilteredTasks().filter((task) => task.goal_id === null);
 
   const hasActiveFilters =
     filters.category !== null ||
@@ -226,27 +213,11 @@ export default function TaskBoard() {
 
   const tasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = { todo: [], in_progress: [], done: [], archived: [] };
-    for (const t of displayTasks) {
+    for (const t of filteredTasks) {
       if (map[t.status]) map[t.status].push(t);
     }
     return map;
-  }, [displayTasks]);
-
-  const groupTasks = useCallback((columnTasks: Task[]) => {
-    if (groupMode === "none") return [{ key: "all", label: null, tasks: columnTasks }];
-    const groups = new Map<string, { label: string; tasks: Task[] }>();
-    for (const task of columnTasks) {
-      const id = groupMode === "goal" ? task.goal_id : task.parent_id;
-      const label = groupMode === "goal"
-        ? goals.find((goal) => goal.id === id)?.title ?? t("taskBoard.noGoal")
-        : tasks.find((candidate) => candidate.id === id)?.title ?? t("taskBoard.noParent");
-      const key = id ?? "ungrouped";
-      const group = groups.get(key) ?? { label, tasks: [] };
-      group.tasks.push(task);
-      groups.set(key, group);
-    }
-    return [...groups.entries()].map(([key, value]) => ({ key, ...value }));
-  }, [groupMode, goals, tasks, t]);
+  }, [filteredTasks]);
 
   const columnLabels: Record<TaskStatus, string> = {
     todo: t("taskBoard.todo"),
@@ -331,21 +302,6 @@ export default function TaskBoard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={groupMode}
-            onChange={(event) => setGroupMode(event.target.value as GroupMode)}
-            className="text-xs px-3 py-2"
-            style={{ border: "1px solid #d8cfbf", borderRadius: 10, color: "#725d42", background: "#fffdf7" }}
-            aria-label={t("taskBoard.groupBy")}
-          >
-            <option value="none">{t("taskBoard.groupNone")}</option>
-            <option value="goal">{t("taskBoard.groupGoal")}</option>
-            <option value="parent">{t("taskBoard.groupParent")}</option>
-          </select>
-          <label className="flex items-center gap-1 text-xs px-2" style={{ color: "#8a7b66" }}>
-            <input type="checkbox" checked={executableOnly} onChange={(event) => setExecutableOnly(event.target.checked)} />
-            {t("taskBoard.executableOnly")}
-          </label>
           <div className="relative">
             <Input
               size="small"
@@ -469,20 +425,15 @@ export default function TaskBoard() {
                         />
                       </div>
                     )}
-                    {groupTasks(columnTasks).map((group) => (
-                      <div key={group.key} className="space-y-2">
-                        {group.label && <div className="text-[11px] font-semibold px-1 pt-2 truncate" style={{ color: "#8a7b66" }}>{group.label}<span className="ml-1 opacity-60">{group.tasks.length}</span></div>}
-                        {group.tasks.map((task, index) => (
-                          <TaskCard
-                            key={task.id}
-                            task={task}
-                            isSelected={selectedTaskId === task.id}
-                            isBeingDragged={dragGhost?.id === task.id}
-                            onSelect={selectTask}
-                            style={index === 0 ? { marginTop: 2 } : undefined}
-                          />
-                        ))}
-                      </div>
+                    {columnTasks.map((task, index) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        isSelected={selectedTaskId === task.id}
+                        isBeingDragged={dragGhost?.id === task.id}
+                        onSelect={selectTask}
+                        style={index === 0 ? { marginTop: 2 } : undefined}
+                      />
                     ))}
                     {columnTasks.length === 0 && quickAddStatus !== status && (
                       <EmptyState
