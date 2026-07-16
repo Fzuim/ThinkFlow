@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Button, Modal } from "animal-island-ui";
+import { Button, Modal, Progress } from "animal-island-ui";
 import { CalendarDays, Flag, Plus, Sparkles, Target, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
@@ -123,9 +123,7 @@ export default function GoalListView() {
                     <div className="flex justify-between text-xs mb-2" style={{ color: "#8a7b66" }}>
                       <span>{t("goals.progress")}</span><strong>{progress}%</strong>
                     </div>
-                    <div className="h-2 overflow-hidden" style={{ borderRadius: 99, background: "#eee7da" }}>
-                      <div className="h-full" style={{ width: `${progress}%`, background: "#19c8b9", borderRadius: 99 }} />
-                    </div>
+                    <Progress percent={progress} size="small" showInfo={false} />
                   </div>
                   <div className="flex items-center gap-5 mt-4 text-xs" style={{ color: "#9f927d" }}>
                     <span className="flex items-center gap-1"><CalendarDays size={13} />{goal.target_date || t("goals.noTargetDate")}</span>

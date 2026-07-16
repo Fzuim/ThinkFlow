@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Modal } from "animal-island-ui";
+import { Button, Modal, Progress } from "animal-island-ui";
 import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
@@ -136,7 +136,7 @@ export default function GoalDetailView() {
             <div><div className="text-xs" style={{ color: "#9f927d" }}>{t("goals.targetDate")}</div><div className="flex items-center gap-1 mt-1 text-sm" style={{ color: "#725d42" }}><CalendarDays size={14} />{goal.target_date || t("goals.noTargetDate")}</div></div>
             <div><div className="text-xs" style={{ color: "#9f927d" }}>{t("goals.successCriteria")}</div><div className="text-sm mt-1 line-clamp-2" style={{ color: "#725d42" }}>{goal.success_criteria || t("goals.noCriteria")}</div></div>
           </div>
-          <div className="h-2 mt-4 overflow-hidden" style={{ borderRadius: 99, background: "#eee7da" }}><div className="h-full" style={{ width: `${progress}%`, background: "#19c8b9" }} /></div>
+          <Progress className="mt-4" percent={progress} size="small" showInfo={false} />
         </section>
 
         <section className="mt-5 p-5" style={{ background: "#fffdf7", border: "2px solid #e8e2d6", borderRadius: 22 }}>
