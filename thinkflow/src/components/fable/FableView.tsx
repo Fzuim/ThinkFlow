@@ -2,7 +2,8 @@
 import { useFableStore } from "@/stores/fableStore";
 import { useTranslation } from "react-i18next";
 import { Card, Button, Icon, Input } from "animal-island-ui";
-import { Loader2, AlertCircle, Settings, Sparkles } from "lucide-react";
+import item014 from "animal-island-ui/items/item-014.png";
+import { Loader2, AlertCircle, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function FableView() {
@@ -224,7 +225,7 @@ export default function FableView() {
                   loading ? (
                     <Loader2 size={16} className="animate-spin" />
                   ) : (
-                    <Sparkles size={16} />
+                    <img src={item014} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
                   )
                 }
               >
@@ -331,7 +332,7 @@ export default function FableView() {
                 loading ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : (
-                  <Sparkles size={20} />
+                  <img src={item014} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
                 )
               }
             >
