@@ -30,9 +30,35 @@ pub struct Task {
     pub source_text: Option<String>,
     #[serde(default)]
     pub progress_log: Vec<ProgressEntry>,
+    pub goal_id: Option<String>,
+    pub parent_id: Option<String>,
+    #[serde(default = "default_task_kind")]
+    pub kind: String,
+    pub start_at: Option<String>,
+    pub planned_end_at: Option<String>,
+    #[serde(default = "default_weight")]
+    pub weight: f64,
+    #[serde(default)]
+    pub sort_order: i32,
+    pub schedule_level: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Goal {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub success_criteria: String,
+    pub start_date: Option<String>,
+    pub target_date: Option<String>,
+    pub status: String,
+    pub progress_mode: String,
+    pub review_cycle: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +169,17 @@ pub struct CreateTaskRequest {
     pub source_text: Option<String>,
     #[serde(default)]
     pub progress_log: Vec<ProgressEntry>,
+    pub goal_id: Option<String>,
+    pub parent_id: Option<String>,
+    #[serde(default = "default_task_kind")]
+    pub kind: String,
+    pub start_at: Option<String>,
+    pub planned_end_at: Option<String>,
+    #[serde(default = "default_weight")]
+    pub weight: f64,
+    #[serde(default)]
+    pub sort_order: i32,
+    pub schedule_level: Option<String>,
 }
 
 fn default_priority() -> i32 {
@@ -156,6 +193,12 @@ fn default_importance() -> String {
 }
 fn default_status() -> String {
     "todo".to_string()
+}
+fn default_task_kind() -> String {
+    "task".to_string()
+}
+fn default_weight() -> f64 {
+    1.0
 }
 
 impl CreateTaskRequest {
@@ -176,6 +219,12 @@ impl CreateTaskRequest {
         }
         if self.priority < 1 || self.priority > 10 {
             return Err("Priority must be between 1 and 10".to_string());
+        }
+        if !["task", "milestone"].contains(&self.kind.as_str()) {
+            return Err("Task kind must be 'task' or 'milestone'".to_string());
+        }
+        if self.weight <= 0.0 {
+            return Err("Task weight must be greater than 0".to_string());
         }
         Ok(())
     }
@@ -201,9 +250,77 @@ impl CreateTaskRequest {
             dependencies: self.dependencies,
             source_text: self.source_text,
             progress_log: Vec::new(),
+            goal_id: self.goal_id,
+            parent_id: self.parent_id,
+            kind: self.kind,
+            start_at: self.start_at,
+            planned_end_at: self.planned_end_at,
+            weight: self.weight,
+            sort_order: self.sort_order,
+            schedule_level: self.schedule_level,
             created_at: now.clone(),
             updated_at: now,
             completed_at: None,
+        }
+    }
+}
+
+pub const VALID_GOAL_STATUSES: &[&str] = &["draft", "active", "paused", "completed", "abandoned"];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGoalRequest {
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub success_criteria: String,
+    pub start_date: Option<String>,
+    pub target_date: Option<String>,
+    #[serde(default = "default_goal_status")]
+    pub status: String,
+    #[serde(default = "default_progress_mode")]
+    pub progress_mode: String,
+    #[serde(default = "default_review_cycle")]
+    pub review_cycle: String,
+}
+
+fn default_goal_status() -> String { "active".to_string() }
+fn default_progress_mode() -> String { "weighted".to_string() }
+fn default_review_cycle() -> String { "weekly".to_string() }
+
+impl CreateGoalRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.title.trim().is_empty() {
+            return Err("Goal title must not be empty".to_string());
+        }
+        if self.title.len() > 300 {
+            return Err("Goal title must not exceed 300 characters".to_string());
+        }
+        if !VALID_GOAL_STATUSES.contains(&self.status.as_str()) {
+            return Err(format!("Invalid goal status '{}'", self.status));
+        }
+        if !["auto", "manual", "weighted"].contains(&self.progress_mode.as_str()) {
+            return Err("Invalid goal progress mode".to_string());
+        }
+        if !["daily", "weekly", "monthly"].contains(&self.review_cycle.as_str()) {
+            return Err("Invalid goal review cycle".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn into_goal(self, id: String, now: String) -> Goal {
+        Goal {
+            id,
+            title: self.title,
+            description: self.description,
+            success_criteria: self.success_criteria,
+            start_date: self.start_date,
+            target_date: self.target_date,
+            status: self.status,
+            progress_mode: self.progress_mode,
+            review_cycle: self.review_cycle,
+            created_at: now.clone(),
+            updated_at: now,
         }
     }
 }

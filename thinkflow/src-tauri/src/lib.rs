@@ -77,6 +77,12 @@ pub fn run() {
             commands::task::update_task,
             commands::task::update_task_status,
             commands::task::delete_task,
+            // Goal commands
+            commands::task::create_goal,
+            commands::task::get_goal,
+            commands::task::get_all_goals,
+            commands::task::update_goal,
+            commands::task::delete_goal,
             // Project commands
             commands::task::create_project,
             commands::task::get_all_projects,

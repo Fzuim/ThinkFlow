@@ -2,7 +2,12 @@ use rusqlite::{Connection, Error as SqliteError, params};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::models::{Memory, Project, Task};
+use crate::models::{Goal, Memory, Project, Task};
+
+const TASK_COLUMNS: &str = "id, title, description, priority, urgency, importance, status, \
+    deadline, estimated_duration, energy_level, category, tags, stakeholder, dependencies, \
+    source_text, created_at, updated_at, completed_at, progress_log, goal_id, parent_id, kind, \
+    start_at, planned_end_at, weight, sort_order, schedule_level";
 
 /// Application-level database error.
 #[derive(Debug, thiserror::Error)]
@@ -18,6 +23,76 @@ pub enum DbError {
 
     #[error("Validation error: {0}")]
     Validation(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_task(id: &str, title: &str, goal_id: Option<&str>, parent_id: Option<&str>) -> Task {
+        Task {
+            id: id.to_string(),
+            title: title.to_string(),
+            description: String::new(),
+            priority: 5,
+            urgency: "normal".to_string(),
+            importance: "normal".to_string(),
+            status: "todo".to_string(),
+            deadline: None,
+            estimated_duration: None,
+            energy_level: None,
+            category: None,
+            tags: Vec::new(),
+            stakeholder: None,
+            dependencies: Vec::new(),
+            source_text: None,
+            progress_log: Vec::new(),
+            goal_id: goal_id.map(String::from),
+            parent_id: parent_id.map(String::from),
+            kind: if parent_id.is_none() { "milestone" } else { "task" }.to_string(),
+            start_at: None,
+            planned_end_at: None,
+            weight: 1.0,
+            sort_order: 0,
+            schedule_level: None,
+            created_at: "2026-07-16T00:00:00Z".to_string(),
+            updated_at: "2026-07-16T00:00:00Z".to_string(),
+            completed_at: None,
+        }
+    }
+
+    #[test]
+    fn persists_goal_hierarchy_and_detects_cycles() {
+        let dir = std::env::temp_dir().join(format!("thinkflow-goal-test-{}", uuid::Uuid::new_v4()));
+        let db = Database::new(dir.clone()).expect("create test database");
+        let goal = Goal {
+            id: "goal-1".to_string(),
+            title: "Pass the exam".to_string(),
+            description: String::new(),
+            success_criteria: "Pass".to_string(),
+            start_date: Some("2026-07-16".to_string()),
+            target_date: Some("2026-12-31".to_string()),
+            status: "active".to_string(),
+            progress_mode: "weighted".to_string(),
+            review_cycle: "weekly".to_string(),
+            created_at: "2026-07-16T00:00:00Z".to_string(),
+            updated_at: "2026-07-16T00:00:00Z".to_string(),
+        };
+        db.create_goal(&goal).expect("persist goal");
+        db.create_task(&test_task("stage-1", "Foundation", Some("goal-1"), None))
+            .expect("persist stage");
+        db.create_task(&test_task("task-1", "Chapter one", Some("goal-1"), Some("stage-1")))
+            .expect("persist child");
+
+        let loaded = db.get_all_tasks().expect("load hierarchy");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.iter().find(|task| task.id == "task-1").unwrap().parent_id.as_deref(), Some("stage-1"));
+        assert!(db.would_create_task_cycle("stage-1", "task-1").unwrap());
+        assert!(!db.would_create_task_cycle("task-1", "stage-1").unwrap());
+
+        drop(db);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
 
 impl From<std::sync::MutexGuard<'_, Connection>> for DbError {
@@ -66,6 +141,30 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             let raw: String = row.get(18)?;
             serde_json::from_str(&raw).unwrap_or_default()
         },
+        goal_id: row.get(19)?,
+        parent_id: row.get(20)?,
+        kind: row.get(21)?,
+        start_at: row.get(22)?,
+        planned_end_at: row.get(23)?,
+        weight: row.get(24)?,
+        sort_order: row.get(25)?,
+        schedule_level: row.get(26)?,
+    })
+}
+
+fn row_to_goal(row: &rusqlite::Row) -> rusqlite::Result<Goal> {
+    Ok(Goal {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        description: row.get(2)?,
+        success_criteria: row.get(3)?,
+        start_date: row.get(4)?,
+        target_date: row.get(5)?,
+        status: row.get(6)?,
+        progress_mode: row.get(7)?,
+        review_cycle: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -86,7 +185,6 @@ impl Database {
     /// Uses `CREATE TABLE IF NOT EXISTS` so it is safe to call repeatedly.
     pub fn ensure_schema(&self) -> Result<(), DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN progress_log TEXT DEFAULT '[]';").ok();
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS tasks (
@@ -108,7 +206,29 @@ impl Database {
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
-                progress_log TEXT DEFAULT '[]'
+                progress_log TEXT DEFAULT '[]',
+                goal_id TEXT,
+                parent_id TEXT,
+                kind TEXT DEFAULT 'task',
+                start_at TEXT,
+                planned_end_at TEXT,
+                weight REAL DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                schedule_level TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS goals (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                success_criteria TEXT DEFAULT '',
+                start_date TEXT,
+                target_date TEXT,
+                status TEXT DEFAULT 'active',
+                progress_mode TEXT DEFAULT 'weighted',
+                review_cycle TEXT DEFAULT 'weekly',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS projects (
@@ -143,14 +263,31 @@ impl Database {
                 value TEXT NOT NULL
             );
 
-            -- Indexes for common query patterns
-            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-            CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
-            CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
-
-            CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
-            CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
             ",
+        )?;
+        // Additive migrations for databases created by earlier releases.
+        for migration in [
+            "ALTER TABLE tasks ADD COLUMN progress_log TEXT DEFAULT '[]'",
+            "ALTER TABLE tasks ADD COLUMN goal_id TEXT",
+            "ALTER TABLE tasks ADD COLUMN parent_id TEXT",
+            "ALTER TABLE tasks ADD COLUMN kind TEXT DEFAULT 'task'",
+            "ALTER TABLE tasks ADD COLUMN start_at TEXT",
+            "ALTER TABLE tasks ADD COLUMN planned_end_at TEXT",
+            "ALTER TABLE tasks ADD COLUMN weight REAL DEFAULT 1",
+            "ALTER TABLE tasks ADD COLUMN sort_order INTEGER DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN schedule_level TEXT",
+        ] {
+            conn.execute_batch(migration).ok();
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+             CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+             CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+             CREATE INDEX IF NOT EXISTS idx_tasks_goal_id ON tasks(goal_id);
+             CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
+             CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
+             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+             CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);",
         )?;
         Ok(())
     }
@@ -168,8 +305,9 @@ impl Database {
         conn.execute(
             "INSERT INTO tasks (id, title, description, priority, urgency, importance, status, \
              deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+             dependencies, source_text, created_at, updated_at, completed_at, progress_log, goal_id, \
+             parent_id, kind, start_at, planned_end_at, weight, sort_order, schedule_level)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
             params![
                 task.id,
                 task.title,
@@ -189,6 +327,15 @@ impl Database {
                 task.created_at,
                 task.updated_at,
                 task.completed_at,
+                serde_json::to_string(&task.progress_log).unwrap_or_else(|_| "[]".to_string()),
+                task.goal_id,
+                task.parent_id,
+                task.kind,
+                task.start_at,
+                task.planned_end_at,
+                task.weight,
+                task.sort_order,
+                task.schedule_level,
             ],
         )?;
         Ok(task.clone())
@@ -197,12 +344,7 @@ impl Database {
     /// Fetch a single task by its ID.
     pub fn get_task_by_id(&self, id: &str) -> Result<Task, DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, priority, urgency, importance, status, \
-             deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
-             FROM tasks WHERE id = ?1",
-        )?;
+        let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE id = ?1"))?;
         let task = stmt
             .query_row(params![id], row_to_task)
             .map_err(|e| match e {
@@ -215,12 +357,7 @@ impl Database {
     /// Return all tasks ordered by created_at descending.
     pub fn get_all_tasks(&self) -> Result<Vec<Task>, DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, priority, urgency, importance, status, \
-             deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
-             FROM tasks ORDER BY created_at DESC",
-        )?;
+        let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks ORDER BY created_at DESC"))?;
         let rows = stmt.query_map([], row_to_task)?;
         let mut tasks = Vec::new();
         for row in rows {
@@ -232,12 +369,7 @@ impl Database {
     /// Return tasks filtered by status.
     pub fn get_tasks_by_status(&self, status: &str) -> Result<Vec<Task>, DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, priority, urgency, importance, status, \
-             deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
-             FROM tasks WHERE status = ?1 ORDER BY created_at DESC",
-        )?;
+        let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE status = ?1 ORDER BY created_at DESC"))?;
         let rows = stmt.query_map(params![status], row_to_task)?;
         let mut tasks = Vec::new();
         for row in rows {
@@ -249,12 +381,7 @@ impl Database {
     /// Return tasks filtered by category.
     pub fn get_tasks_by_category(&self, category: &str) -> Result<Vec<Task>, DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, priority, urgency, importance, status, \
-             deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
-             FROM tasks WHERE category = ?1 ORDER BY created_at DESC",
-        )?;
+        let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE category = ?1 ORDER BY created_at DESC"))?;
         let rows = stmt.query_map(params![category], row_to_task)?;
         let mut tasks = Vec::new();
         for row in rows {
@@ -268,14 +395,7 @@ impl Database {
     pub fn search_tasks(&self, query: &str) -> Result<Vec<Task>, DbError> {
         let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
         let pattern = format!("%{}%", query);
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, priority, urgency, importance, status, \
-             deadline, estimated_duration, energy_level, category, tags, stakeholder, \
-             dependencies, source_text, created_at, updated_at, completed_at, progress_log \
-             FROM tasks \
-             WHERE title LIKE ?1 OR description LIKE ?1 \
-             ORDER BY created_at DESC",
-        )?;
+        let mut stmt = conn.prepare(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE title LIKE ?1 OR description LIKE ?1 ORDER BY created_at DESC"))?;
         let rows = stmt.query_map(params![pattern], row_to_task)?;
         let mut tasks = Vec::new();
         for row in rows {
@@ -296,8 +416,9 @@ impl Database {
             "UPDATE tasks SET title=?1, description=?2, priority=?3, urgency=?4, importance=?5, \
              status=?6, deadline=?7, estimated_duration=?8, energy_level=?9, category=?10, \
              tags=?11, stakeholder=?12, dependencies=?13, source_text=?14, updated_at=?15, \
-             completed_at=?16 \
-             WHERE id=?17",
+             completed_at=?16, progress_log=?17, goal_id=?18, parent_id=?19, kind=?20, \
+             start_at=?21, planned_end_at=?22, weight=?23, sort_order=?24, schedule_level=?25 \
+             WHERE id=?26",
             params![
                 updates.title,
                 updates.description,
@@ -315,6 +436,15 @@ impl Database {
                 updates.source_text,
                 updates.updated_at,
                 updates.completed_at,
+                serde_json::to_string(&updates.progress_log).unwrap_or_else(|_| "[]".to_string()),
+                updates.goal_id,
+                updates.parent_id,
+                updates.kind,
+                updates.start_at,
+                updates.planned_end_at,
+                updates.weight,
+                updates.sort_order,
+                updates.schedule_level,
                 where_id,
             ],
         )?;
@@ -323,6 +453,30 @@ impl Database {
             return Err(DbError::NotFound(format!("Task '{}' not found", where_id)));
         }
         Ok(updates.clone())
+    }
+
+    /// Returns true when assigning `candidate_parent_id` would make a task a
+    /// descendant of itself. The recursive CTE walks upward from the proposed parent.
+    pub fn would_create_task_cycle(
+        &self,
+        task_id: &str,
+        candidate_parent_id: &str,
+    ) -> Result<bool, DbError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        let found: i64 = conn.query_row(
+            "WITH RECURSIVE ancestors(id, parent_id) AS (
+                SELECT id, parent_id FROM tasks WHERE id = ?1
+                UNION ALL
+                SELECT t.id, t.parent_id FROM tasks t JOIN ancestors a ON t.id = a.parent_id
+             )
+             SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = ?2)",
+            params![candidate_parent_id, task_id],
+            |row| row.get(0),
+        )?;
+        Ok(found != 0)
     }
 
     /// Update only the status of a task.
@@ -352,11 +506,81 @@ impl Database {
 
     /// Delete a task by ID.
     pub fn delete_task(&self, id: &str) -> Result<(), DbError> {
-        let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
-        let affected = conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE tasks SET parent_id = NULL WHERE parent_id = ?1", params![id])?;
+        let affected = tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
         if affected == 0 {
             return Err(DbError::NotFound(format!("Task '{}' not found", id)));
         }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------------
+    // Goal CRUD
+    // ---------------------------------------------------------------------------
+
+    pub fn create_goal(&self, goal: &Goal) -> Result<Goal, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        conn.execute(
+            "INSERT INTO goals (id, title, description, success_criteria, start_date, target_date, \
+             status, progress_mode, review_cycle, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![goal.id, goal.title, goal.description, goal.success_criteria, goal.start_date,
+                goal.target_date, goal.status, goal.progress_mode, goal.review_cycle,
+                goal.created_at, goal.updated_at],
+        )?;
+        Ok(goal.clone())
+    }
+
+    pub fn get_goal_by_id(&self, id: &str) -> Result<Goal, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        conn.query_row(
+            "SELECT id, title, description, success_criteria, start_date, target_date, status, \
+             progress_mode, review_cycle, created_at, updated_at FROM goals WHERE id = ?1",
+            params![id],
+            row_to_goal,
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound(format!("Goal '{}' not found", id)),
+            other => DbError::Sqlite(other),
+        })
+    }
+
+    pub fn get_all_goals(&self) -> Result<Vec<Goal>, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, description, success_criteria, start_date, target_date, status, \
+             progress_mode, review_cycle, created_at, updated_at FROM goals ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_goal)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::Sqlite)
+    }
+
+    pub fn update_goal(&self, id: &str, goal: &Goal) -> Result<Goal, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        let affected = conn.execute(
+            "UPDATE goals SET title=?1, description=?2, success_criteria=?3, start_date=?4, \
+             target_date=?5, status=?6, progress_mode=?7, review_cycle=?8, updated_at=?9 WHERE id=?10",
+            params![goal.title, goal.description, goal.success_criteria, goal.start_date,
+                goal.target_date, goal.status, goal.progress_mode, goal.review_cycle,
+                goal.updated_at, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::NotFound(format!("Goal '{}' not found", id)));
+        }
+        Ok(goal.clone())
+    }
+
+    pub fn delete_goal(&self, id: &str) -> Result<(), DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock("Mutex poisoned".to_string()))?;
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE tasks SET goal_id = NULL WHERE goal_id = ?1", params![id])?;
+        let affected = tx.execute("DELETE FROM goals WHERE id = ?1", params![id])?;
+        if affected == 0 {
+            return Err(DbError::NotFound(format!("Goal '{}' not found", id)));
+        }
+        tx.commit()?;
         Ok(())
     }
 
