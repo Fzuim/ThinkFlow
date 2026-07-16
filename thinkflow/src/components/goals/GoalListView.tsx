@@ -16,6 +16,7 @@ export default function GoalListView() {
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState("");
   const [targetDate, setTargetDate] = useState("");
+  const [targetDateFocused, setTargetDateFocused] = useState(false);
 
   useEffect(() => { init(); }, [init]);
 
@@ -106,10 +107,10 @@ export default function GoalListView() {
 
       <Modal open={open} title={t("goals.create")} onClose={() => setOpen(false)} onOk={handleCreate} typewriter={false} width={560}>
         <div className="space-y-4" style={{ width: "100%" }}>
-          <Field label={t("goals.form.title")}><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></Field>
-          <Field label={t("goals.form.description")}><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} style={inputStyle} {...focusHandlers} /></Field>
-          <Field label={t("goals.form.criteria")}><textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={2} style={inputStyle} {...focusHandlers} /></Field>
-          <Field label={t("goals.form.targetDate")}><input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.title")}><input className="placeholder:text-[#aaa08f]" autoFocus value={title} placeholder={t("goals.form.titlePlaceholder")} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.description")}><textarea className="placeholder:text-[#aaa08f]" value={description} placeholder={t("goals.form.descriptionPlaceholder")} onChange={(event) => setDescription(event.target.value)} rows={3} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.criteria")}><textarea className="placeholder:text-[#aaa08f]" value={criteria} placeholder={t("goals.form.criteriaPlaceholder")} onChange={(event) => setCriteria(event.target.value)} rows={2} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.targetDate")}><input className="placeholder:text-[#aaa08f]" type={targetDateFocused || targetDate ? "date" : "text"} value={targetDate} placeholder={t("goals.form.targetDatePlaceholder")} onFocus={(event) => { setTargetDateFocused(true); focusHandlers.onFocus(event); }} onBlur={(event) => { setTargetDateFocused(false); focusHandlers.onBlur(event); }} onChange={(event) => setTargetDate(event.target.value)} style={inputStyle} /></Field>
         </div>
       </Modal>
     </div>

@@ -84,9 +84,13 @@
     "noStages": "还没有阶段，先搭建目标的第一层路线图。",
     "form": {
       "title": "目标名称",
+      "titlePlaceholder": "例如：今年通过一级造价工程师考试",
       "description": "目标说明",
+      "descriptionPlaceholder": "例如：系统学习四门科目，每周稳定投入 10 小时",
       "criteria": "成功标准",
+      "criteriaPlaceholder": "例如：四门科目全部通过，并完成三轮模拟考试",
       "targetDate": "目标日期",
+      "targetDatePlaceholder": "例如：2026-10-31",
       "taskTitle": "名称",
       "kind": "节点类型",
       "plannedEnd": "计划完成日期"

@@ -84,9 +84,13 @@
     "noStages": "No stages yet. Start with the first layer of your roadmap.",
     "form": {
       "title": "Goal title",
+      "titlePlaceholder": "e.g. Pass the cost engineer certification this year",
       "description": "Description",
+      "descriptionPlaceholder": "e.g. Study four subjects systematically for 10 hours each week",
       "criteria": "Success criteria",
+      "criteriaPlaceholder": "e.g. Pass all four subjects and complete three mock exam rounds",
       "targetDate": "Target date",
+      "targetDatePlaceholder": "e.g. 2026-10-31",
       "taskTitle": "Name",
       "kind": "Node type",
       "plannedEnd": "Planned completion"
