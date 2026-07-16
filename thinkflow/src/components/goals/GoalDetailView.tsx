@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Modal } from "animal-island-ui";
-import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
 import { useTaskStore, type Task, type TaskKind } from "@/stores/taskStore";
@@ -16,8 +17,24 @@ export default function GoalDetailView() {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<TaskKind>("task");
   const [plannedEnd, setPlannedEnd] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ task: Task; x: number; y: number } | null>(null);
 
   useEffect(() => { initGoals(); initTasks(); }, [initGoals, initTasks]);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("blur", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
   const goal = goals.find((item) => item.id === goalId);
   const goalTasks = useMemo(
     () => tasks.filter((task) => task.goal_id === goalId).sort((a, b) => a.sort_order - b.sort_order),
@@ -133,7 +150,7 @@ export default function GoalDetailView() {
               <Button type="primary" onClick={() => openAdd(null, "milestone")}>{t("goals.addFirstStage")}</Button>
             </div>
           ) : roots.map((root) => (
-            <TaskTreeNode key={root.id} task={root} allTasks={goalTasks} depth={0} onAdd={openAdd} onEdit={openEdit} onMove={moveTask} onDelete={deleteNode} />
+            <TaskTreeNode key={root.id} task={root} allTasks={goalTasks} depth={0} onAdd={openAdd} onEdit={openEdit} onMove={moveTask} onOpenMenu={(task, x, y) => setContextMenu({ task, x, y })} />
           ))}
         </section>
       </div>
@@ -145,6 +162,36 @@ export default function GoalDetailView() {
           <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.plannedEnd")}</span><input type="date" value={plannedEnd} onChange={(event) => setPlannedEnd(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
         </div>
       </Modal>
+
+      {contextMenu && createPortal(
+        <div
+          className="fixed min-w-32 p-1"
+          style={{
+            zIndex: 99999,
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 150)),
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 56)),
+            borderRadius: 10,
+            border: "1px solid #ded5c5",
+            background: "#fffdf7",
+            boxShadow: "0 8px 24px rgba(80,65,45,0.22)",
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[#fbe9e6]"
+            style={{ borderRadius: 8, color: "#d75b4e" }}
+            onClick={() => {
+              const taskId = contextMenu.task.id;
+              setContextMenu(null);
+              void deleteNode(taskId);
+            }}
+          >
+            <Trash2 size={14} />{t("goals.deleteNode")}
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -177,12 +224,12 @@ const focusHandlers = {
   },
 };
 
-function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onDelete }: {
+function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onOpenMenu }: {
   task: Task; allTasks: Task[]; depth: number;
   onAdd: (parentId: string | null, kind?: TaskKind) => void;
   onEdit: (task: Task) => void;
   onMove: (id: string, status: Task["status"]) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
+  onOpenMenu: (task: Task, x: number, y: number) => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
@@ -197,7 +244,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onDelete }
         onContextMenu={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          void onDelete(task.id);
+          onOpenMenu(task, event.clientX, event.clientY);
         }}
       >
         <button onClick={() => setExpanded((value) => !value)} className="w-5" style={{ color: "#9f927d" }}>{isParent ? (expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />) : null}</button>
@@ -222,7 +269,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onDelete }
         {(task.planned_end_at || task.deadline) && <span className="text-xs" style={{ color: "#9f927d" }}>{(task.planned_end_at || task.deadline)?.slice(0, 10)}</span>}
         <button className="opacity-0 group-hover:opacity-100 text-xs px-2 py-1" style={{ color: "#168f85" }} onClick={() => onAdd(task.id)}><Plus size={13} className="inline" /> {t("goals.child")}</button>
       </div>
-      {expanded && children.map((child) => <TaskTreeNode key={child.id} task={child} allTasks={allTasks} depth={depth + 1} onAdd={onAdd} onEdit={onEdit} onMove={onMove} onDelete={onDelete} />)}
+      {expanded && children.map((child) => <TaskTreeNode key={child.id} task={child} allTasks={allTasks} depth={depth + 1} onAdd={onAdd} onEdit={onEdit} onMove={onMove} onOpenMenu={onOpenMenu} />)}
     </div>
   );
 }
