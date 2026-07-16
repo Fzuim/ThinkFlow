@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Button, Icon, Modal, Progress } from "animal-island-ui";
+import { Button, Icon, Modal, Progress, Tag } from "animal-island-ui";
 import { CalendarDays, Flag, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
 import { useTaskStore } from "@/stores/taskStore";
+
+const progressStatusColors = {
+  notStarted: "default",
+  inProgress: "app-blue",
+  completed: "app-green",
+} as const;
 
 export default function GoalListView() {
   const { t } = useTranslation();
@@ -122,7 +128,14 @@ export default function GoalListView() {
                       <h3 className="text-lg font-semibold" style={{ color: "#725d42" }}>{goal.title}</h3>
                       <p className="text-sm mt-1 line-clamp-2" style={{ color: "#9f927d" }}>{goal.description || t("goals.noDescription")}</p>
                     </div>
-                    <span className="shrink-0 whitespace-nowrap text-xs font-semibold px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{t(`goals.status.${progressStatus}`)}</span>
+                    <Tag
+                      className="shrink-0 whitespace-nowrap"
+                      color={progressStatusColors[progressStatus]}
+                      size="small"
+                      variant="solid"
+                    >
+                      {t(`goals.status.${progressStatus}`)}
+                    </Tag>
                   </div>
                   <div className="mt-5">
                     <div className="flex justify-between text-xs mb-2" style={{ color: "#8a7b66" }}>
