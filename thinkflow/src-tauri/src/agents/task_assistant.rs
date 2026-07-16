@@ -1,5 +1,5 @@
 use crate::llm::provider::{ChatCompletionRequest, ChatMessage};
-use crate::models::Task;
+use crate::models::{Goal, Task};
 use chrono::Local;
 
 pub struct TaskAssistantAgent;
@@ -24,8 +24,9 @@ fn build_task_list(tasks: &[Task]) -> String {
             .map(|c| c.as_str())
             .unwrap_or("-");
         buf.push_str(&format!(
-            "[id:{}] \"{}\" | status:{} | priority:{} | deadline:{} | category:{} | created:{} | completed:{}\n",
-            t.id, t.title, t.status, t.priority, deadline_str, cat, created_str, completed_str
+            "[id:{}] \"{}\" | status:{} | kind:{} | goal:{} | parent:{} | priority:{} | deadline:{} | category:{} | created:{} | completed:{}\n",
+            t.id, t.title, t.status, t.kind, t.goal_id.as_deref().unwrap_or("-"),
+            t.parent_id.as_deref().unwrap_or("-"), t.priority, deadline_str, cat, created_str, completed_str
         ));
     }
     buf
@@ -41,6 +42,7 @@ impl TaskAssistantAgent {
     pub fn build_prompt(
         user_message: &str,
         active_tasks: &[Task],
+        goals: &[Goal],
         completed_tasks: Option<&[Task]>,
         task_details: Option<&str>,
         memory_context: &str,
@@ -52,6 +54,15 @@ impl TaskAssistantAgent {
 
         // --- Build task list sections ---
         let active_list = build_task_list(active_tasks);
+        let goal_list = if goals.is_empty() {
+            "(no goals)".to_string()
+        } else {
+            goals.iter().map(|goal| format!(
+                "[id:{}] \"{}\" | status:{} | start:{} | target:{} | criteria:{}",
+                goal.id, goal.title, goal.status, goal.start_date.as_deref().unwrap_or("-"),
+                goal.target_date.as_deref().unwrap_or("-"), goal.success_criteria
+            )).collect::<Vec<_>>().join("\n")
+        };
 
         let (completed_section, scope_note) = match completed_tasks {
             Some(completed) => {
@@ -72,7 +83,7 @@ impl TaskAssistantAgent {
             ),
         };
 
-        let task_list = format!("Current tasks:\n{active_list}{completed_section}");
+        let task_list = format!("Current goals:\n{goal_list}\n\nCurrent tasks:\n{active_list}{completed_section}");
 
         let detail_section = match task_details {
             Some(details) if !details.is_empty() => format!("\nTask details (fetched on demand):\n{details}\n"),
@@ -106,6 +117,7 @@ IMPORTANT: The task list below is the CURRENT state from the database. Users may
 - **如果当前任务清单中没有已完成任务（只有 todo/in_progress），而用户询问的是已完成任务相关的问题，你必须返回 {{"type": "query_completed_tasks"}} action，系统会获取已完成任务后重试。**
 
 ## Supported action types:
+- **create_goal**: Create a long-term goal. Include `goal` with title, description, success_criteria, start_date, target_date and review_cycle. When the user asks to plan a goal but constraints are unclear, ask about target date, current level and weekly available time before creating it.
 - **create**: Create a new task. Include fields: title, priority (1-10), deadline (ISO 8601, resolve relative times like "下周一" using current date), category ("work"|"life"|"study"|"health"), energy_level ("deep"|"medium"|"shallow"), stakeholder (person name if mentioned), tags (keyword array).
 - **update**: Update an existing task. Match by title keyword → provide task_id + fields to update.
 - **delete**: Delete a task. Match by title keyword → provide task_id. NOTE: Delete actions are automatically moved to suggested_actions — the UI will show a Yes/No confirmation button to the user before actually deleting. You can return delete in actions normally; the system handles the confirmation flow. In your reply, tell the user you're about to delete the task so they know to confirm.
@@ -125,6 +137,7 @@ Return a JSON object:
   "reply": "natural language response to the user",
   "actions": [
     {{"type": "create", "task": {{"title": "...", "priority": 8, "deadline": "2026-05-18T09:00:00", "category": "work", "energy_level": "deep", "stakeholder": null, "tags": ["report"]}}}}, // + move with __created__ for tasks the user starts doing
+    {{"type": "create_goal", "goal": {{"title": "...", "description": "...", "success_criteria": "...", "start_date": "2026-07-16", "target_date": "2026-12-31", "review_cycle": "weekly"}}}},
     {{"type": "move", "task_id": "__created__", "status": "in_progress"}},
     {{"type": "update", "task_id": "xxx", "updates": {{"status": "done"}}}},
     {{"type": "delete", "task_id": "yyy"}},
@@ -140,6 +153,7 @@ Return a JSON object:
 - Always reply in the SAME language as the user's message.
 - Be concise and friendly.
 - For "create" actions, derive urgency from priority: >=7 = "urgent", <=3 = "low", else "normal". Same for importance.
+- To create a hierarchical plan in one batch, emit create_goal first. Use goal_id `__created_goal__` on every planned task. Give parent nodes `kind:"milestone"` and a unique `ref_id` such as `stage_1`; child tasks reference them with parent_id `__ref:stage_1`. Put an unconfirmed multi-task plan in suggested_actions so the user can approve it before creation.
 
 ## Progress recording:
 - When the user reports progress on an existing task (e.g., "我在做XX任务，刚完成了登录模块", "Q2报告已经写完第一部分了"), IMMEDIATELY add a "record_progress" action to "actions".

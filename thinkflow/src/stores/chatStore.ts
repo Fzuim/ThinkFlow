@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useTaskStore, type Task } from "@/stores/taskStore";
+import { useGoalStore } from "@/stores/goalStore";
 
 const HISTORY_KEY = "task_assistant_history";
 const MAX_HISTORY = 100;
@@ -21,18 +22,20 @@ function isAbortError(e: unknown): boolean {
 }
 
 export interface AssistantAction {
-  type: "create" | "update" | "delete" | "move" | "record_progress";
+  type: "create" | "create_goal" | "update" | "delete" | "move" | "record_progress";
   task_id?: string;
   task?: Record<string, unknown>;
   updates?: Record<string, unknown>;
   status?: string;
   content?: string;
+  goal?: Record<string, unknown>;
 }
 
 export interface ActionResult {
   success: boolean;
   error?: string;
   taskTitle?: string;
+  entityId?: string;
 }
 
 export interface ChatMessage {
@@ -56,7 +59,7 @@ interface ChatStore {
   streamingReasoning: string;
 
   init: () => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, context?: string) => Promise<void>;
   stopStreaming: () => void;
   confirmSuggested: (messageId: string, confirmed: boolean) => Promise<void>;
   clearChat: () => void;
@@ -103,12 +106,32 @@ async function executeAction(action: AssistantAction): Promise<ActionResult> {
         dependencies: [],
         source_text: null,
         progress_log: [],
+        goal_id: (t.goal_id as string) ?? null,
+        parent_id: (t.parent_id as string) ?? null,
+        kind: (t.kind as Task["kind"]) ?? "task",
+        start_at: (t.start_at as string) ?? null,
+        planned_end_at: (t.planned_end_at as string) ?? null,
+        weight: (t.weight as number) ?? 1,
+        sort_order: (t.sort_order as number) ?? 0,
+        schedule_level: (t.schedule_level as Task["schedule_level"]) ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         completed_at: null,
       };
       await taskStore.addTask(task);
-      return { success: true, taskTitle: task.title };
+      return { success: true, taskTitle: task.title, entityId: task.id };
+    }
+    case "create_goal": {
+      const input = action.goal ?? {};
+      const goal = await useGoalStore.getState().addGoal({
+        title: (input.title as string) ?? "Untitled goal",
+        description: (input.description as string) ?? "",
+        success_criteria: (input.success_criteria as string) ?? "",
+        start_date: (input.start_date as string) ?? null,
+        target_date: (input.target_date as string) ?? null,
+        review_cycle: (input.review_cycle as "daily" | "weekly" | "monthly") ?? "weekly",
+      });
+      return { success: true, taskTitle: goal.title, entityId: goal.id };
     }
     case "update": {
       if (!action.task_id) return { success: false, error: "Missing task_id" };
@@ -185,7 +208,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  sendMessage: async (content) => {
+  sendMessage: async (content, context) => {
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -239,7 +262,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Start the streaming command
       try {
         await invoke("task_assistant_stream", {
-          message: content,
+          message: context ? `${context}\n\n${content}` : content,
           history: JSON.stringify(historyPayload),
         } as any);
       } catch (e: any) {
@@ -284,13 +307,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Execute actions sequentially (await each one)
       const actionResults: ActionResult[] = [];
       let lastCreatedId: string | null = null;
+      let lastCreatedGoalId: string | null = null;
+      const createdTaskRefs = new Map<string, string>();
       for (const action of finalDonePayload.actions) {
         try {
           let resolvedAction = { ...action };
-          if (action.type === "create") {
+          if (action.type === "create_goal") {
+            const result = await executeAction(resolvedAction);
+            if (result.entityId) lastCreatedGoalId = result.entityId;
+            actionResults.push(result);
+            continue;
+          } else if (action.type === "create") {
             const newId = crypto.randomUUID();
             lastCreatedId = newId;
-            resolvedAction = { ...resolvedAction, task: { ...action.task, _id: newId } };
+            const task = { ...action.task, _id: newId } as Record<string, unknown>;
+            if (task.goal_id === "__created_goal__" && lastCreatedGoalId) task.goal_id = lastCreatedGoalId;
+            if (typeof task.parent_id === "string" && task.parent_id.startsWith("__ref:")) {
+              task.parent_id = createdTaskRefs.get(task.parent_id.slice(6)) ?? null;
+            }
+            resolvedAction = { ...resolvedAction, task };
+            if (typeof task.ref_id === "string") createdTaskRefs.set(task.ref_id, newId);
           } else if (action.type === "move" && action.task_id === "__created__" && lastCreatedId) {
             resolvedAction = { ...resolvedAction, task_id: lastCreatedId };
           }
@@ -360,9 +396,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (!msg?.suggestedActions) return;
 
     const actionResults: ActionResult[] = [];
+    let lastCreatedGoalId: string | null = null;
+    const createdTaskRefs = new Map<string, string>();
     for (const action of msg.suggestedActions) {
       try {
-        const result = await executeAction(action);
+        let resolvedAction = { ...action };
+        if (action.type === "create_goal") {
+          const result = await executeAction(resolvedAction);
+          if (result.entityId) lastCreatedGoalId = result.entityId;
+          actionResults.push(result);
+          continue;
+        }
+        if (action.type === "create") {
+          const newId = crypto.randomUUID();
+          const task = { ...action.task, _id: newId } as Record<string, unknown>;
+          if (task.goal_id === "__created_goal__" && lastCreatedGoalId) task.goal_id = lastCreatedGoalId;
+          if (typeof task.parent_id === "string" && task.parent_id.startsWith("__ref:")) {
+            task.parent_id = createdTaskRefs.get(task.parent_id.slice(6)) ?? null;
+          }
+          if (typeof task.ref_id === "string") createdTaskRefs.set(task.ref_id, newId);
+          resolvedAction = { ...action, task };
+        }
+        const result = await executeAction(resolvedAction);
         actionResults.push(result);
       } catch (e: any) {
         actionResults.push({

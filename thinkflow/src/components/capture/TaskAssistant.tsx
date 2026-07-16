@@ -18,7 +18,8 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useGoalStore } from "@/stores/goalStore";
 
 function ActionBadges({ actions, results }: { actions: ChatMessage["actions"]; results?: ActionResult[] }) {
   const { t } = useTranslation();
@@ -32,7 +33,7 @@ function ActionBadges({ actions, results }: { actions: ChatMessage["actions"]; r
         const title = result?.taskTitle;
 
         const icon =
-          action.type === "create" ? (
+          action.type === "create" || action.type === "create_goal" ? (
             <CheckCircle2 size={12} style={{ color: success ? "#6fba2c" : "#e05a5a" }} />
           ) : action.type === "delete" ? (
             <Trash2 size={12} style={{ color: success ? "#e05a5a" : "#e05a5a" }} />
@@ -43,8 +44,8 @@ function ActionBadges({ actions, results }: { actions: ChatMessage["actions"]; r
           );
 
         const label =
-          action.type === "create"
-            ? t("taskAssistant.actions.created")
+          action.type === "create" || action.type === "create_goal"
+            ? t(action.type === "create_goal" ? "taskAssistant.actions.goalCreated" : "taskAssistant.actions.created")
             : action.type === "delete"
               ? t("taskAssistant.actions.deleted")
               : action.type === "move"
@@ -148,6 +149,10 @@ let _draftInput = "";
 export default function TaskAssistant() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const goalId = searchParams.get("goalId");
+  const { goals, init: initGoals } = useGoalStore();
+  const scopedGoal = goals.find((goal) => goal.id === goalId);
   const { messages, loading, error, streamingContent, streamingReasoning, init, sendMessage, stopStreaming, confirmSuggested, clearChat } = useChatStore();
   const [input, setInput] = useState(_draftInput);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -176,6 +181,7 @@ export default function TaskAssistant() {
   }, [streamingContent]);
 
   useEffect(() => { init(); }, [init]);
+  useEffect(() => { initGoals(); }, [initGoals]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -186,12 +192,13 @@ export default function TaskAssistant() {
 
   const handleSend = useCallback(() => {
     if (!input.trim() || loading) return;
-    sendMessage(input.trim());
+    const context = scopedGoal ? `Current goal context: [id:${scopedGoal.id}] "${scopedGoal.title}". Keep the discussion and actions scoped to this goal unless the user explicitly says otherwise.` : undefined;
+    sendMessage(input.trim(), context);
     setInput("");
     _draftInput = "";
     // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, loading, sendMessage]);
+  }, [input, loading, sendMessage, scopedGoal]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -228,6 +235,7 @@ export default function TaskAssistant() {
           </Button>
           <Icon name="icon-chat" size={22} style={{ color: "#19c8b9" }} />
           <h2 className="text-xl font-semibold" style={{ color: "#725d42" }}>{t("taskAssistant.title")}</h2>
+          {scopedGoal && <button onClick={() => navigate(`/goals/${scopedGoal.id}`)} className="text-xs px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{scopedGoal.title}</button>}
         </div>
         <Button type="text" onClick={clearChat} title={t("taskAssistant.clearChat")}>
           <Trash2 size={16} />

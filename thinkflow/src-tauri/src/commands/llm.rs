@@ -424,6 +424,7 @@ pub struct TaskAssistantAction {
     pub action_type: String,
     pub task_id: Option<String>,
     pub task: Option<serde_json::Value>,
+    pub goal: Option<serde_json::Value>,
     pub updates: Option<serde_json::Value>,
     pub status: Option<String>,
     pub content: Option<String>,
@@ -488,6 +489,7 @@ fn parse_task_actions(arr_val: Option<&serde_json::Value>) -> Vec<TaskAssistantA
                         action_type,
                         task_id: a["task_id"].as_str().map(String::from),
                         task: a.get("task").cloned(),
+                        goal: a.get("goal").cloned(),
                         updates: a.get("updates").cloned(),
                         status: a["status"].as_str().map(String::from),
                         content: a["content"].as_str().map(String::from),
@@ -657,12 +659,14 @@ async fn do_task_assistant_llm(
     chat_history: &[ChatMessage],
 ) -> Result<(serde_json::Value, Option<String>), String> {
     let active_tasks = get_active_tasks(db)?;
+    let goals = db.get_all_goals().map_err(|e| e.to_string())?;
     let provider = crate::llm::provider::get_provider(&config.provider);
 
     // --- Stage 1: active tasks only ---
     let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
         message,
         &active_tasks,
+        &goals,
         None,
         None,
         memory_context,
@@ -703,6 +707,7 @@ async fn do_task_assistant_llm(
         let request = crate::agents::task_assistant::TaskAssistantAgent::build_prompt(
             message,
             &active_tasks,
+            &goals,
             completed_tasks.as_ref().map(|v| v.as_slice()),
             task_details_text.as_deref(),
             memory_context,
