@@ -211,6 +211,7 @@ export default function FableView() {
             {/* Input for another concept */}
             <div className="flex gap-2">
               <Input
+                shadow
                 value={concept}
                 onChange={(e) => setConcept(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -317,6 +318,7 @@ export default function FableView() {
           </div>
           <div className="flex gap-2 w-full max-w-md">
             <Input
+              shadow
               value={concept}
               onChange={(e) => setConcept(e.target.value)}
               onKeyDown={handleKeyDown}
