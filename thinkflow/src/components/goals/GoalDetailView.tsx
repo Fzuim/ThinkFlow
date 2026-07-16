@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Modal } from "animal-island-ui";
-import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Circle, Diamond, Plus, Sparkles, Target } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
 import { useTaskStore, type Task, type TaskKind } from "@/stores/taskStore";
@@ -11,8 +11,8 @@ export default function GoalDetailView() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { goals, init: initGoals } = useGoalStore();
-  const { tasks, init: initTasks, addTask, moveTask, deleteTask } = useTaskStore();
-  const [dialog, setDialog] = useState<{ open: boolean; parentId: string | null }>({ open: false, parentId: null });
+  const { tasks, init: initTasks, addTask, updateTask, moveTask, deleteTask } = useTaskStore();
+  const [dialog, setDialog] = useState<{ open: boolean; parentId: string | null; editingId: string | null }>({ open: false, parentId: null, editingId: null });
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<TaskKind>("task");
   const [plannedEnd, setPlannedEnd] = useState("");
@@ -28,14 +28,34 @@ export default function GoalDetailView() {
   const progress = calculateGoalProgress(goalId, tasks);
 
   const openAdd = (parentId: string | null, defaultKind: TaskKind = "task") => {
-    setDialog({ open: true, parentId });
+    setDialog({ open: true, parentId, editingId: null });
     setKind(defaultKind);
     setTitle("");
     setPlannedEnd("");
   };
 
-  const createTask = async () => {
+  const openEdit = (task: Task) => {
+    setDialog({ open: true, parentId: task.parent_id, editingId: task.id });
+    setTitle(task.title);
+    setKind(task.kind);
+    setPlannedEnd((task.planned_end_at || task.deadline)?.slice(0, 10) ?? "");
+  };
+
+  const closeDialog = () => setDialog({ open: false, parentId: null, editingId: null });
+
+  const saveTask = async () => {
     if (!title.trim()) return;
+    if (dialog.editingId) {
+      await updateTask(dialog.editingId, {
+        title: title.trim(),
+        kind,
+        deadline: plannedEnd || null,
+        planned_end_at: plannedEnd || null,
+        schedule_level: kind === "milestone" ? "stage" : null,
+      });
+      closeDialog();
+      return;
+    }
     const now = new Date().toISOString();
     const siblings = goalTasks.filter((task) => task.parent_id === dialog.parentId);
     const task: Task = {
@@ -48,7 +68,7 @@ export default function GoalDetailView() {
       created_at: now, updated_at: now, completed_at: null,
     };
     await addTask(task);
-    setDialog({ open: false, parentId: null });
+    closeDialog();
   };
 
   const deleteNode = async (id: string) => {
@@ -113,12 +133,12 @@ export default function GoalDetailView() {
               <Button type="primary" onClick={() => openAdd(null, "milestone")}>{t("goals.addFirstStage")}</Button>
             </div>
           ) : roots.map((root) => (
-            <TaskTreeNode key={root.id} task={root} allTasks={goalTasks} depth={0} onAdd={openAdd} onMove={moveTask} onDelete={deleteNode} />
+            <TaskTreeNode key={root.id} task={root} allTasks={goalTasks} depth={0} onAdd={openAdd} onEdit={openEdit} onMove={moveTask} onDelete={deleteNode} />
           ))}
         </section>
       </div>
 
-      <Modal open={dialog.open} title={dialog.parentId ? t("goals.addChild") : t("goals.addStage")} onClose={() => setDialog({ open: false, parentId: null })} onOk={createTask} typewriter={false} width={500}>
+      <Modal open={dialog.open} title={dialog.editingId ? t("goals.editNode") : dialog.parentId ? t("goals.addChild") : t("goals.addStage")} onClose={closeDialog} onOk={saveTask} typewriter={false} width={500}>
         <div className="space-y-4" style={{ width: "100%" }}>
           <label className="block w-full"><span className="text-xs font-semibold block mb-1" style={{ color: "#9f927d" }}>{t("goals.form.taskTitle")}</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></label>
           <div className="w-full"><span className="text-xs font-semibold block mb-2" style={{ color: "#9f927d" }}>{t("goals.form.kind")}</span><div className="grid grid-cols-2 gap-2"><Button type={kind === "task" ? "primary" : "dashed"} onClick={() => setKind("task")}>{t("goals.kind.task")}</Button><Button type={kind === "milestone" ? "primary" : "dashed"} onClick={() => setKind("milestone")}>{t("goals.kind.milestone")}</Button></div></div>
@@ -157,25 +177,15 @@ const focusHandlers = {
   },
 };
 
-function TaskTreeNode({ task, allTasks, depth, onAdd, onMove, onDelete }: {
+function TaskTreeNode({ task, allTasks, depth, onAdd, onEdit, onMove, onDelete }: {
   task: Task; allTasks: Task[]; depth: number;
   onAdd: (parentId: string | null, kind?: TaskKind) => void;
+  onEdit: (task: Task) => void;
   onMove: (id: string, status: Task["status"]) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    document.addEventListener("pointerdown", close);
-    window.addEventListener("blur", close);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      window.removeEventListener("blur", close);
-    };
-  }, [contextMenu]);
   const children = allTasks.filter((child) => child.parent_id === task.id).sort((a, b) => a.sort_order - b.sort_order);
   const completed = children.filter((child) => child.status === "done").length;
   const isParent = children.length > 0 || task.kind === "milestone";
@@ -187,7 +197,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onMove, onDelete }: {
         onContextMenu={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          setContextMenu({ x: event.clientX, y: event.clientY });
+          void onDelete(task.id);
         }}
       >
         <button onClick={() => setExpanded((value) => !value)} className="w-5" style={{ color: "#9f927d" }}>{isParent ? (expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />) : null}</button>
@@ -203,8 +213,8 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onMove, onDelete }: {
         <button
           className="flex-1 text-left text-sm font-medium"
           style={{ color: task.status === "done" ? "#9f927d" : "#725d42", textDecoration: task.status === "done" ? "line-through" : "none" }}
-          title={task.kind === "task" ? t("goals.doubleClickComplete") : undefined}
-          onDoubleClick={() => task.kind === "task" && onMove(task.id, task.status === "done" ? "todo" : "done")}
+          title={t("goals.doubleClickEdit")}
+          onDoubleClick={() => onEdit(task)}
         >
           {task.title}
         </button>
@@ -212,22 +222,7 @@ function TaskTreeNode({ task, allTasks, depth, onAdd, onMove, onDelete }: {
         {(task.planned_end_at || task.deadline) && <span className="text-xs" style={{ color: "#9f927d" }}>{(task.planned_end_at || task.deadline)?.slice(0, 10)}</span>}
         <button className="opacity-0 group-hover:opacity-100 text-xs px-2 py-1" style={{ color: "#168f85" }} onClick={() => onAdd(task.id)}><Plus size={13} className="inline" /> {t("goals.child")}</button>
       </div>
-      {contextMenu && (
-        <div
-          className="fixed z-50 min-w-28 p-1"
-          style={{ left: contextMenu.x, top: contextMenu.y, borderRadius: 10, border: "1px solid #ded5c5", background: "#fffdf7", boxShadow: "0 8px 24px rgba(80,65,45,0.18)" }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[#fbe9e6]"
-            style={{ borderRadius: 8, color: "#d75b4e" }}
-            onClick={() => { setContextMenu(null); onDelete(task.id); }}
-          >
-            <Trash2 size={14} />{t("goals.deleteNode")}
-          </button>
-        </div>
-      )}
-      {expanded && children.map((child) => <TaskTreeNode key={child.id} task={child} allTasks={allTasks} depth={depth + 1} onAdd={onAdd} onMove={onMove} onDelete={onDelete} />)}
+      {expanded && children.map((child) => <TaskTreeNode key={child.id} task={child} allTasks={allTasks} depth={depth + 1} onAdd={onAdd} onEdit={onEdit} onMove={onMove} onDelete={onDelete} />)}
     </div>
   );
 }
