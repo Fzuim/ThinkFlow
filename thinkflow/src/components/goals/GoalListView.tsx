@@ -1,24 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Button, Modal } from "animal-island-ui";
-import { CalendarDays, Flag, Plus, Sparkles, Target } from "lucide-react";
+import { CalendarDays, Flag, Plus, Sparkles, Target, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
+import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
 import { useTaskStore } from "@/stores/taskStore";
 
 export default function GoalListView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { goals, init, addGoal } = useGoalStore();
-  const tasks = useTaskStore((state) => state.tasks);
+  const { goals, init, addGoal, deleteGoal } = useGoalStore();
+  const { tasks, deleteTask } = useTaskStore();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [targetDateFocused, setTargetDateFocused] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ goal: Goal; x: number; y: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null);
 
   useEffect(() => { init(); }, [init]);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("blur", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
 
   const activeGoals = useMemo(
     () => goals.filter((goal) => !["abandoned"].includes(goal.status)),
@@ -41,6 +59,16 @@ export default function GoalListView() {
     setTargetDate("");
     navigate(`/goals/${goal.id}`);
   };
+
+  const confirmDeleteGoal = async () => {
+    if (!deleteTarget) return;
+    const taskIds = tasks.filter((task) => task.goal_id === deleteTarget.id).map((task) => task.id);
+    for (const taskId of taskIds) await deleteTask(taskId);
+    await deleteGoal(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
+  const deleteTaskCount = deleteTarget ? tasks.filter((task) => task.goal_id === deleteTarget.id).length : 0;
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -76,6 +104,11 @@ export default function GoalListView() {
                 <button
                   key={goal.id}
                   onClick={() => navigate(`/goals/${goal.id}`)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setContextMenu({ goal, x: event.clientX, y: event.clientY });
+                  }}
                   className="text-left p-5 transition-transform hover:-translate-y-0.5"
                   style={{ background: "#fffdf7", border: "2px solid #e8e2d6", borderRadius: 20, boxShadow: "0 5px 14px rgba(107,92,67,0.12)" }}
                 >
@@ -113,6 +146,42 @@ export default function GoalListView() {
           <Field label={t("goals.form.targetDate")}><input className="placeholder:text-[#aaa08f]" type={targetDateFocused || targetDate ? "date" : "text"} value={targetDate} placeholder={t("goals.form.targetDatePlaceholder")} onFocus={(event) => { setTargetDateFocused(true); focusHandlers.onFocus(event); }} onBlur={(event) => { setTargetDateFocused(false); focusHandlers.onBlur(event); }} onChange={(event) => setTargetDate(event.target.value)} style={inputStyle} /></Field>
         </div>
       </Modal>
+
+      <Modal open={deleteTarget !== null} title={t("goals.deleteGoal")} onClose={() => setDeleteTarget(null)} onOk={confirmDeleteGoal} typewriter={false} width={440}>
+        <p className="text-sm leading-6" style={{ color: "#725d42" }}>
+          {deleteTarget && t("goals.deleteGoalConfirm", { title: deleteTarget.title, count: deleteTaskCount })}
+        </p>
+      </Modal>
+
+      {contextMenu && createPortal(
+        <div
+          className="fixed min-w-32 p-1"
+          style={{
+            zIndex: 99999,
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 150)),
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 56)),
+            borderRadius: 10,
+            border: "1px solid #ded5c5",
+            background: "#fffdf7",
+            boxShadow: "0 8px 24px rgba(80,65,45,0.22)",
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[#fbe9e6]"
+            style={{ borderRadius: 8, color: "#d75b4e" }}
+            onClick={() => {
+              const goal = contextMenu.goal;
+              setContextMenu(null);
+              setDeleteTarget(goal);
+            }}
+          >
+            <Trash2 size={14} />{t("goals.deleteGoal")}
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

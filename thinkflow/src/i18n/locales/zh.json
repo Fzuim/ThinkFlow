@@ -54,6 +54,8 @@
     "subtitle": "把长期目标拆成阶段和每天可以执行的行动。",
     "create": "创建目标",
     "createFirst": "创建第一个目标",
+    "deleteGoal": "删除目标",
+    "deleteGoalConfirm": "确认删除目标“{{title}}”及其 {{count}} 个阶段/任务节点吗？此操作无法撤销。",
     "aiPlan": "让 AI 帮我规划",
     "discuss": "与 AI 规划",
     "empty": "还没有目标",

@@ -54,6 +54,8 @@
     "subtitle": "Turn long-term goals into stages and daily actions.",
     "create": "Create Goal",
     "createFirst": "Create Your First Goal",
+    "deleteGoal": "Delete Goal",
+    "deleteGoalConfirm": "Delete goal “{{title}}” and its {{count}} stage/task nodes? This cannot be undone.",
     "aiPlan": "Plan with AI",
     "discuss": "Plan with AI",
     "empty": "No goals yet",
