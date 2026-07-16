@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Input, Modal } from "animal-island-ui";
+import { Button, Modal } from "animal-island-ui";
 import { CalendarDays, Flag, Plus, Sparkles, Target } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore } from "@/stores/goalStore";
@@ -105,11 +105,11 @@ export default function GoalListView() {
       </div>
 
       <Modal open={open} title={t("goals.create")} onClose={() => setOpen(false)} onOk={handleCreate} typewriter={false} width={560}>
-        <div className="space-y-4">
-          <Field label={t("goals.form.title")}><Input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
-          <Field label={t("goals.form.description")}><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} style={textareaStyle} /></Field>
-          <Field label={t("goals.form.criteria")}><textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={2} style={textareaStyle} /></Field>
-          <Field label={t("goals.form.targetDate")}><Input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /></Field>
+        <div className="space-y-4" style={{ width: "100%" }}>
+          <Field label={t("goals.form.title")}><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.description")}><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.criteria")}><textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={2} style={inputStyle} {...focusHandlers} /></Field>
+          <Field label={t("goals.form.targetDate")}><input type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} style={inputStyle} {...focusHandlers} /></Field>
         </div>
       </Modal>
     </div>
@@ -117,10 +117,33 @@ export default function GoalListView() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="block text-xs font-semibold mb-1" style={{ color: "#8a7b66" }}>{label}</span>{children}</label>;
+  return <label className="block w-full"><span className="block text-xs font-semibold mb-1" style={{ color: "#9f927d" }}>{label}</span>{children}</label>;
 }
 
-const textareaStyle: React.CSSProperties = {
-  width: "100%", border: "1px solid #d8cfbf", borderRadius: 12, padding: "10px 12px",
-  background: "#fffdf8", color: "#725d42", outline: "none", resize: "vertical",
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  resize: "none",
+  background: "rgb(247, 243, 223)",
+  border: "2.5px solid #c4b89e",
+  borderRadius: 18,
+  padding: "10px 16px",
+  fontSize: 14,
+  fontWeight: 500,
+  color: "#725d42",
+  fontFamily: "inherit",
+  outline: "none",
+  boxShadow: "0 3px 0 0 #d4c9b4",
+  transition: "border-color 0.25s, box-shadow 0.25s",
+};
+
+const focusHandlers = {
+  onFocus: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    event.currentTarget.style.borderColor = "#ffcc00";
+    event.currentTarget.style.boxShadow = "0 3px 0 0 #e0b800, 0 0 0 3px rgba(255,204,0,0.15)";
+  },
+  onBlur: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    event.currentTarget.style.borderColor = "#c4b89e";
+    event.currentTarget.style.boxShadow = "0 3px 0 0 #d4c9b4";
+  },
 };
