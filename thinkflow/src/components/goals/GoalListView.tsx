@@ -79,11 +79,11 @@ export default function GoalListView() {
                   style={{ background: "#fffdf7", border: "2px solid #e8e2d6", borderRadius: 20, boxShadow: "0 5px 14px rgba(107,92,67,0.12)" }}
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h3 className="text-lg font-semibold" style={{ color: "#725d42" }}>{goal.title}</h3>
                       <p className="text-sm mt-1 line-clamp-2" style={{ color: "#9f927d" }}>{goal.description || t("goals.noDescription")}</p>
                     </div>
-                    <span className="text-xs font-semibold px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{t(`goals.status.${goal.status}`)}</span>
+                    <span className="shrink-0 whitespace-nowrap text-xs font-semibold px-2 py-1" style={{ borderRadius: 99, background: "#e8f7f4", color: "#168f85" }}>{t(`goals.status.${goal.status}`)}</span>
                   </div>
                   <div className="mt-5">
                     <div className="flex justify-between text-xs mb-2" style={{ color: "#8a7b66" }}>

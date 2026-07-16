@@ -7,8 +7,8 @@ export default function MainLayout() {
 
   const navItems: { to: string; iconName: IconName; key: string }[] = [
     { to: "/capture", iconName: "icon-chat", key: "nav.taskAssistant" },
-    { to: "/goals", iconName: "icon-map", key: "nav.goals" },
     { to: "/", iconName: "icon-variant", key: "nav.taskBoard" },
+    { to: "/goals", iconName: "icon-map", key: "nav.goals" },
     { to: "/focus", iconName: "icon-miles", key: "nav.focusMode" },
     { to: "/briefing", iconName: "icon-design", key: "nav.dailyBrief" },
     { to: "/fable", iconName: "icon-map", key: "nav.fable" },
