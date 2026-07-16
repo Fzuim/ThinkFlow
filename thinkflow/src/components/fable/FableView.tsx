@@ -225,7 +225,7 @@ export default function FableView() {
                   loading ? (
                     <Loader2 size={16} className="animate-spin" />
                   ) : (
-                    <img src={item014} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
+                    <Icon src={item014} size={20} />
                   )
                 }
               >
@@ -332,7 +332,7 @@ export default function FableView() {
                 loading ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : (
-                  <img src={item014} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
+                  <Icon src={item014} size={20} />
                 )
               }
             >

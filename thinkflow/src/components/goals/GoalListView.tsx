@@ -91,7 +91,7 @@ export default function GoalListView() {
           <div className="flex gap-2">
             <Button
               type="dashed"
-              icon={<img src={item001} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />}
+              icon={<Icon src={item001} size={20} />}
               onClick={() => navigate("/capture?mode=goal")}
             >
               {t("goals.aiPlan")}
