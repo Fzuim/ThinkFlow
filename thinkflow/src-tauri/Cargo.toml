@@ -1,6 +1,6 @@
 [package]
 name = "thinkflow"
-version = "1.0.0"
+version = "1.0.1"
 description = "ThinkFlow - AI Smart Todo Desktop App"
 authors = ["ThinkFlow contributors"]
 license = "MIT"
