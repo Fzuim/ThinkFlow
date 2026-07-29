@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Button, Icon, Modal, Progress, Tag } from "animal-island-ui";
-import item001 from "animal-island-ui/items/item-001.png";
-import { CalendarDays, Flag, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Flag, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { calculateGoalProgress, useGoalStore, type Goal } from "@/stores/goalStore";
 import { useTaskStore } from "@/stores/taskStore";
@@ -91,7 +90,7 @@ export default function GoalListView() {
           <div className="flex gap-2">
             <Button
               type="dashed"
-              icon={<Icon src={item001} size={20} />}
+              icon={<MessageCircle size={14} />}
               onClick={() => navigate("/capture?mode=goal")}
             >
               {t("goals.aiPlan")}
