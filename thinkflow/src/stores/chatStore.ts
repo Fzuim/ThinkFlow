@@ -385,9 +385,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { listen } = await import("@tauri-apps/api/event");
 
       // Build history (only role + content) for the LLM context
-      const currentMessages = get().messages;
       const maxMessages = readChatRounds() * 2;
-      const historyPayload = currentMessages
+      // `requestMessages` already contains the user message currently being
+      // sent. Exclude it from history because the backend appends `message`
+      // separately; including it here makes the model receive the same prompt
+      // twice and can contaminate multi-round conversations.
+      const historyPayload = requestMessages
+        .slice(0, -1)
         .slice(-maxMessages)
         .map((m) => ({ role: m.role, content: m.content }));
 
