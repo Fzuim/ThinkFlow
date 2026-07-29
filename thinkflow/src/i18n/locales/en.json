@@ -312,11 +312,6 @@
     "tags": "Tags",
     "tagsPlaceholder": "Type and press Enter to add",
     "estimatedDuration": "Duration",
-    "parent": "Parent task",
-    "noParent": "No parent",
-    "kind": "Type",
-    "kindTask": "Action task",
-    "kindMilestone": "Stage / milestone",
     "minutes": "min",
     "contextMenuLabel": "Edit Task"
   }
