@@ -51,6 +51,10 @@
   .animal-cursor * {
     cursor: url('/cursors/cursor-sm.png') 2 0, auto !important;
     }
+  .task-board-dragging,
+  .task-board-dragging * {
+    cursor: url('/cursors/cursor-sm.png') 2 0, auto !important;
+    }
 }
 
 /* Range slider */

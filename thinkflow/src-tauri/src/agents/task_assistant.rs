@@ -190,9 +190,18 @@ Return a JSON object:
             content: system_prompt,
         }];
 
-        // Add conversation history (last 10 messages)
-        let history_slice = history.iter().rev().take(10).collect::<Vec<_>>();
-        for msg in history_slice.into_iter().rev() {
+        // Add conversation history (last 10 messages). Older clients included
+        // the current user message at the end of `history` even though it is
+        // appended separately below, so defensively drop that exact duplicate.
+        let history_end = if history.last().is_some_and(|message| {
+            message.role == "user" && message.content.trim() == user_message.trim()
+        }) {
+            history.len() - 1
+        } else {
+            history.len()
+        };
+        let history_start = history_end.saturating_sub(10);
+        for msg in &history[history_start..history_end] {
             messages.push(ChatMessage {
                 role: msg.role.clone(),
                 content: msg.content.clone(),
@@ -214,5 +223,49 @@ Return a JSON object:
             response_format: Some(serde_json::json!({"type": "json_object"})),
             stream: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_user_message_is_not_duplicated_from_history() {
+        let user_message = "需要和蔡行汇报交叉检查安排";
+        let history = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "上一条问题".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "上一条回答".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user_message.into(),
+            },
+        ];
+
+        let request = TaskAssistantAgent::build_prompt(
+            user_message,
+            &[],
+            &[],
+            None,
+            None,
+            "",
+            &history,
+            None,
+        );
+
+        assert_eq!(
+            request
+                .messages
+                .iter()
+                .filter(|message| message.role == "user" && message.content == user_message)
+                .count(),
+            1
+        );
     }
 }
