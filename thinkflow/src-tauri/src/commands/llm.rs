@@ -1,5 +1,7 @@
 use crate::db::sqlite::Database;
-use crate::llm::provider::{ChatCompletionRequest, ChatMessage, ConnectionTestResult, ModelInfo};
+use crate::llm::provider::{
+    ChatCompletionRequest, ChatMessage, ConnectionTestResult, LlmProvider, ModelInfo,
+};
 use crate::models::LlmConfig;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -530,6 +532,21 @@ fn extract_reply_with_fallback(parsed: &serde_json::Value) -> String {
     }
 }
 
+/// Whether the model produced a final task-assistant result rather than only
+/// reasoning/thinking content. Some reasoning models can finish their analysis
+/// without ever populating `message.content`, especially when the output token
+/// budget is exhausted.
+fn has_task_assistant_output(parsed: &serde_json::Value) -> bool {
+    parsed["reply"]
+        .as_str()
+        .is_some_and(|reply| !reply.trim().is_empty())
+        || ["actions", "suggested_actions"].iter().any(|key| {
+            parsed[*key]
+                .as_array()
+                .is_some_and(|actions| !actions.is_empty())
+        })
+}
+
 /// Check whether the LLM response contains a `query_completed_tasks` action,
 /// signalling that a second-stage lookup with completed/archived tasks is needed.
 fn needs_completed_lookup(parsed: &serde_json::Value) -> bool {
@@ -649,6 +666,67 @@ fn apply_model_config(
     request
 }
 
+/// Run one task-assistant completion and make one focused recovery attempt when
+/// a reasoning model returns analysis but no final JSON. The recovery continues
+/// from the model's own reasoning so it only needs to materialize the structured
+/// result instead of repeating the whole analysis.
+async fn complete_task_assistant_request(
+    provider: &dyn LlmProvider,
+    config: &LlmConfig,
+    request: ChatCompletionRequest,
+) -> Result<(serde_json::Value, Option<String>), String> {
+    let request = apply_model_config(request, config);
+    let recovery_base = request.clone();
+    let response = provider
+        .chat(&config.api_key, &config.base_url, request)
+        .await
+        .map_err(|e| e.to_string())?;
+    let parsed = parse_llm_json(&response.content);
+    let original_reasoning = response.reasoning.clone();
+
+    if has_task_assistant_output(&parsed) {
+        return Ok((parsed, original_reasoning));
+    }
+
+    let mut recovery_request = recovery_base;
+    if let Some(reasoning) = original_reasoning
+        .as_deref()
+        .map(str::trim)
+        .filter(|reasoning| !reasoning.is_empty())
+    {
+        recovery_request.messages.push(ChatMessage {
+            role: "assistant".into(),
+            content: reasoning.to_string(),
+        });
+    }
+    recovery_request.messages.push(ChatMessage {
+        role: "user".into(),
+        content: concat!(
+            "上一次回复只完成了分析，没有生成最终结果。请直接根据已经完成的分析输出最终 JSON；",
+            "不要重复分析，不要使用 Markdown 代码块，也不要遗漏 reply、actions 和 suggested_actions。"
+        )
+        .into(),
+    });
+    recovery_request.temperature = Some(0.0);
+
+    // The first request itself succeeded, so a failed recovery should preserve
+    // the original response instead of turning it into a transport error.
+    let Ok(recovery_response) = provider
+        .chat(
+            &config.api_key,
+            &config.base_url,
+            recovery_request,
+        )
+        .await
+    else {
+        return Ok((parsed, original_reasoning));
+    };
+
+    let recovery_parsed = parse_llm_json(&recovery_response.content);
+    let reasoning = original_reasoning.or(recovery_response.reasoning);
+    Ok((recovery_parsed, reasoning))
+}
+
 /// Defense-in-depth for goal-scoped conversations. The model only sees the
 /// selected goal, and its returned actions are also constrained before they
 /// leave the backend.
@@ -745,13 +823,8 @@ async fn do_task_assistant_llm(
         chat_history,
         scope_goal.as_ref(),
     );
-    let request = apply_model_config(request, config);
-    let response = provider
-        .chat(&config.api_key, &config.base_url, request)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut parsed = parse_llm_json(&response.content);
-    let mut reasoning = response.reasoning.clone();
+    let (mut parsed, mut reasoning) =
+        complete_task_assistant_request(provider.as_ref(), config, request).await?;
 
     // --- Stage 2: if LLM needs more info, retry with supplemented data ---
     let needs_completed = needs_completed_lookup(&parsed);
@@ -794,13 +867,8 @@ async fn do_task_assistant_llm(
             chat_history,
             scope_goal.as_ref(),
         );
-        let request = apply_model_config(request, config);
-        let response = provider
-            .chat(&config.api_key, &config.base_url, request)
-            .await
-            .map_err(|e| e.to_string())?;
-        parsed = parse_llm_json(&response.content);
-        reasoning = response.reasoning.clone();
+        (parsed, reasoning) =
+            complete_task_assistant_request(provider.as_ref(), config, request).await?;
     }
 
     // Move delete actions to suggested_actions so the UI shows a confirmation button
@@ -998,6 +1066,68 @@ pub async fn task_assistant_stream(
 #[cfg(test)]
 mod goal_scope_tests {
     use super::*;
+    use crate::llm::provider::{ChatCompletionResponse, LlmError};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct EmptyThenStructuredProvider {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmProvider for EmptyThenStructuredProvider {
+        async fn chat(
+            &self,
+            _api_key: &str,
+            _base_url: &str,
+            request: ChatCompletionRequest,
+        ) -> Result<ChatCompletionResponse, LlmError> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                return Ok(ChatCompletionResponse {
+                    content: String::new(),
+                    reasoning: Some("建议创建一个向蔡行汇报的待确认任务。".into()),
+                });
+            }
+
+            assert_eq!(request.temperature, Some(0.0));
+            assert!(request
+                .messages
+                .last()
+                .is_some_and(|message| message.content.contains("直接根据已经完成的分析输出最终 JSON")));
+            Ok(ChatCompletionResponse {
+                content: serde_json::json!({
+                    "reply": "建议创建该汇报任务，请确认。",
+                    "actions": [],
+                    "suggested_actions": [
+                        {"type": "create", "task": {"title": "向蔡行汇报交叉检查安排"}}
+                    ]
+                })
+                .to_string(),
+                reasoning: None,
+            })
+        }
+
+        async fn list_models(
+            &self,
+            _api_key: &str,
+            _base_url: &str,
+        ) -> Result<Vec<ModelInfo>, LlmError> {
+            Ok(vec![])
+        }
+
+        async fn test_connection(
+            &self,
+            _api_key: &str,
+            _base_url: &str,
+            _model: &str,
+        ) -> Result<ConnectionTestResult, LlmError> {
+            Ok(ConnectionTestResult {
+                success: true,
+                message: String::new(),
+                latency_ms: 0,
+            })
+        }
+    }
 
     #[test]
     fn goal_scope_binds_creates_and_removes_cross_scope_actions() {
@@ -1022,5 +1152,68 @@ mod goal_scope_tests {
         assert_eq!(actions[0]["task"]["goal_id"], "goal-1");
         assert_eq!(actions[1]["updates"]["goal_id"], "goal-1");
         assert!(parsed["suggested_actions"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_task_assistant_result_requires_recovery() {
+        let parsed = serde_json::json!({
+            "reply": " \n",
+            "actions": [],
+            "suggested_actions": []
+        });
+
+        assert!(!has_task_assistant_output(&parsed));
+    }
+
+    #[test]
+    fn suggested_actions_are_a_valid_task_assistant_result() {
+        let parsed = serde_json::json!({
+            "reply": "",
+            "actions": [],
+            "suggested_actions": [
+                {"type": "create", "task": {"title": "向蔡行汇报交叉检查安排"}}
+            ]
+        });
+
+        assert!(has_task_assistant_output(&parsed));
+    }
+
+    #[tokio::test]
+    async fn retries_when_model_returns_reasoning_without_final_content() {
+        let provider = EmptyThenStructuredProvider {
+            calls: AtomicUsize::new(0),
+        };
+        let config = LlmConfig {
+            provider: "test".into(),
+            api_key: String::new(),
+            model: "test-model".into(),
+            base_url: "http://localhost".into(),
+            extra_params: serde_json::json!({"temperature": 0.3, "max_tokens": 4096}),
+        };
+        let request = ChatCompletionRequest {
+            model: String::new(),
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "需要和蔡行汇报交叉检查安排".into(),
+            }],
+            temperature: Some(0.3),
+            max_tokens: Some(2048),
+            top_p: None,
+            top_k: None,
+            response_format: Some(serde_json::json!({"type": "json_object"})),
+            stream: None,
+        };
+
+        let (parsed, reasoning) =
+            complete_task_assistant_request(&provider, &config, request)
+                .await
+                .unwrap();
+
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(parsed["suggested_actions"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            reasoning.as_deref(),
+            Some("建议创建一个向蔡行汇报的待确认任务。")
+        );
     }
 }
