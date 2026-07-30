@@ -22,6 +22,19 @@ const columns: { status: TaskStatus; accentColor: string }[] = [
   { status: "done", accentColor: "#8ac68a" },
 ];
 
+function timestampOrFallback(value: string | null, fallback = Number.NEGATIVE_INFINITY) {
+  if (!value) return fallback;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? fallback : timestamp;
+}
+
+function compareByCompletionTimeDesc(a: Task, b: Task) {
+  const aCompletedAt = timestampOrFallback(a.completed_at);
+  const bCompletedAt = timestampOrFallback(b.completed_at);
+  if (aCompletedAt !== bCompletedAt) return bCompletedAt - aCompletedAt;
+  return timestampOrFallback(b.updated_at) - timestampOrFallback(a.updated_at);
+}
+
 const TASK_DRAGGING_CLASS = "task-board-dragging";
 
 /** Hit-test all column rects and return the matching status, or null. */
@@ -229,6 +242,7 @@ export default function TaskBoard() {
     for (const t of filteredTasks) {
       if (map[t.status]) map[t.status].push(t);
     }
+    map.done.sort(compareByCompletionTimeDesc);
     return map;
   }, [filteredTasks]);
 
