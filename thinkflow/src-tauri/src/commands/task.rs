@@ -20,6 +20,15 @@ fn now_utc() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+fn append_progress_to_description(description: &str, progress_line: &str) -> String {
+    let existing = description.trim_end();
+    if existing.is_empty() {
+        progress_line.to_string()
+    } else {
+        format!("{existing}\n{progress_line}")
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Task commands
 // ---------------------------------------------------------------------------
@@ -159,11 +168,7 @@ pub fn append_task_progress(
         |row| row.get(0),
     ).map_err(|e| format!("{}", e))?;
 
-    let new_desc = if desc.trim().is_empty() {
-        progress_line
-    } else {
-        format!("{}\n\n{}", desc, progress_line)
-    };
+    let new_desc = append_progress_to_description(&desc, &progress_line);
 
     conn.execute(
         "UPDATE tasks SET description = ?1, updated_at = ?2 WHERE id = ?3",
@@ -261,4 +266,34 @@ pub fn get_tasks_by_category(
 #[tauri::command]
 pub fn get_all_projects(db: State<Database>) -> Result<Vec<Project>, String> {
     db.get_all_projects().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_progress_to_description;
+
+    #[test]
+    fn appends_progress_on_exactly_one_new_line() {
+        let progress = "2026-07-30 09:30  完成接口联调";
+
+        assert_eq!(
+            append_progress_to_description("已有描述", progress),
+            format!("已有描述\n{progress}")
+        );
+        assert_eq!(
+            append_progress_to_description("已有描述\n", progress),
+            format!("已有描述\n{progress}")
+        );
+        assert_eq!(
+            append_progress_to_description("已有描述\n\n", progress),
+            format!("已有描述\n{progress}")
+        );
+    }
+
+    #[test]
+    fn empty_description_starts_with_progress_content() {
+        let progress = "2026-07-30 09:30  完成接口联调";
+
+        assert_eq!(append_progress_to_description(" \n", progress), progress);
+    }
 }
