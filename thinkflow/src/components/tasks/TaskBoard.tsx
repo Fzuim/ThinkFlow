@@ -22,6 +22,8 @@ const columns: { status: TaskStatus; accentColor: string }[] = [
   { status: "done", accentColor: "#8ac68a" },
 ];
 
+const TASK_DRAGGING_CLASS = "task-board-dragging";
+
 /** Hit-test all column rects and return the matching status, or null. */
 function hitTestColumn(
   columnRefs: Record<string, HTMLDivElement | null>,
@@ -103,6 +105,7 @@ export default function TaskBoard() {
         // Prevent text selection while dragging
         document.body.style.userSelect = "none";
         document.body.style.webkitUserSelect = "none";
+        document.body.classList.add(TASK_DRAGGING_CLASS);
       }
 
       setDragGhost({
@@ -114,10 +117,10 @@ export default function TaskBoard() {
       setDragOverStatus(hitTestColumn(columnRefs.current, e.clientX, e.clientY));
     };
 
-    const onPointerUp = (e: PointerEvent) => {
+    const finishDrag = (e?: PointerEvent) => {
       if (!dragInfo.current) return;
 
-      if (dragInfo.current.active) {
+      if (e && dragInfo.current.active) {
         const targetStatus = hitTestColumn(columnRefs.current, e.clientX, e.clientY);
         if (targetStatus) {
           moveTaskRef.current(dragInfo.current.taskId, targetStatus);
@@ -127,15 +130,25 @@ export default function TaskBoard() {
       dragInfo.current = null;
       document.body.style.userSelect = "";
       document.body.style.webkitUserSelect = "";
+      document.body.classList.remove(TASK_DRAGGING_CLASS);
       setDragGhost(null);
       setDragOverStatus(null);
     };
 
+    const cancelDrag = () => finishDrag();
+
     document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointerup", finishDrag);
+    document.addEventListener("pointercancel", cancelDrag);
+    window.addEventListener("blur", cancelDrag);
     return () => {
       document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointerup", finishDrag);
+      document.removeEventListener("pointercancel", cancelDrag);
+      window.removeEventListener("blur", cancelDrag);
+      document.body.style.userSelect = "";
+      document.body.style.webkitUserSelect = "";
+      document.body.classList.remove(TASK_DRAGGING_CLASS);
     };
   }, []);
 
